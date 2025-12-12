@@ -11,7 +11,7 @@ const { PDFDocument, degrees } = require('pdf-lib');
 const sharp = require('sharp');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 // Create upload directories
 const UPLOAD_DIR = path.join(__dirname, 'temp_uploads');
@@ -31,8 +31,10 @@ app.use(helmet({
             defaultSrc: ["'self'"],
             styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
             fontSrc: ["'self'", "https://fonts.gstatic.com"],
-            scriptSrc: ["'self'", "'unsafe-inline'"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com"],
+            workerSrc: ["'self'", "blob:", "https://cdnjs.cloudflare.com"],
             imgSrc: ["'self'", "data:", "blob:"],
+            connectSrc: ["'self'", "blob:"],
         },
     },
 }));
