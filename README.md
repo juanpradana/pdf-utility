@@ -4,13 +4,14 @@
   <img src="https://img.shields.io/badge/Node.js-18+-green?logo=node.js" alt="Node.js">
   <img src="https://img.shields.io/badge/Express-4.x-blue?logo=express" alt="Express">
   <img src="https://img.shields.io/badge/License-MIT-yellow" alt="License">
+  <img src="https://img.shields.io/badge/Demo-Live-brightgreen" alt="Demo">
 </p>
 
 Aplikasi pemrosesan PDF **self-hosted** yang aman, cepat, dan 100% sadar privasi. Semua pemrosesan dilakukan di server Anda sendiri - tidak ada data yang dikirim ke pihak ketiga.
 
 ## ✨ Demo
 
-![PDF Utility Suite Screenshot](https://via.placeholder.com/800x400?text=PDF+Utility+Suite+Screenshot)
+🌐 **Live Demo:** [https://pdf.farzani.space](https://pdf.farzani.space)
 
 ## 🎯 Fitur
 
@@ -43,8 +44,8 @@ Aplikasi pemrosesan PDF **self-hosted** yang aman, cepat, dan 100% sadar privasi
 
 ```bash
 # Clone repository
-git clone https://github.com/username/secure-pdf-utility-suite.git
-cd secure-pdf-utility-suite
+git clone https://github.com/juanpradana/pdf-utility.git
+cd pdf-utility
 
 # Install dependencies
 npm install
@@ -53,7 +54,7 @@ npm install
 npm start
 ```
 
-Server akan berjalan di `http://localhost:3000`
+Server akan berjalan di `http://localhost:3001`
 
 ### Development
 
@@ -93,7 +94,7 @@ secure-pdf-utility-suite/
 Edit `server.js` untuk konfigurasi:
 
 ```javascript
-const PORT = process.env.PORT || 3000;      // Port server
+const PORT = process.env.PORT || 3001;      // Port server
 const FILE_EXPIRY_MS = 30 * 60 * 1000;      // File expiry (30 menit)
 ```
 
@@ -101,7 +102,25 @@ const FILE_EXPIRY_MS = 30 * 60 * 1000;      // File expiry (30 menit)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | 3000 | Port server |
+| `PORT` | 3001 | Port server |
+
+### Nginx Configuration (Production)
+
+Jika menggunakan Nginx sebagai reverse proxy, pastikan untuk mengatur `client_max_body_size` agar upload file besar tidak mengalami error **413 Request Entity Too Large**:
+
+```nginx
+# /etc/nginx/sites-available/pdf.farzani.space
+server {
+    ...
+    client_max_body_size 100M;  # Sesuaikan dengan kebutuhan
+    ...
+}
+```
+
+Setelah update, reload Nginx:
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
 
 ## 📱 Responsive Design
 
