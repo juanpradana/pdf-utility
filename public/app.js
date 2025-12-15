@@ -380,6 +380,14 @@ function renderMergeFileList() {
         
         list.appendChild(item);
     });
+    
+    // Initialize touch drag for mobile
+    initTouchDrag(list, list, (fromIndex, toIndex) => {
+        const [moved] = state.mergeFiles.splice(fromIndex, 1);
+        state.mergeFiles.splice(toIndex, 0, moved);
+        renderMergeFileList();
+        rebuildMergePages();
+    });
 }
 
 function removeMergeFile(index) {
@@ -1380,6 +1388,13 @@ function renderJpgToPdfFileList() {
         });
         
         list.appendChild(item);
+    });
+    
+    // Initialize touch drag for mobile
+    initTouchDrag(list, list, (fromIndex, toIndex) => {
+        const [moved] = state.jpgToPdfFiles.splice(fromIndex, 1);
+        state.jpgToPdfFiles.splice(toIndex, 0, moved);
+        renderJpgToPdfFileList();
     });
 }
 

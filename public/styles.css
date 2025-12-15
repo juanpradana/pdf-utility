@@ -1266,22 +1266,30 @@ body {
     }
     
     .file-item {
-        flex-wrap: wrap;
+        display: flex;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: 0.5rem;
         padding: 0.75rem;
+        width: 100%;
+        box-sizing: border-box;
+        overflow: hidden;
     }
     
     .file-info {
-        width: calc(100% - 56px);
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
     }
     
     .file-actions {
-        width: 100%;
-        justify-content: flex-end;
-        margin-top: 0.5rem;
+        flex-shrink: 0;
+        margin-left: auto;
     }
     
     .drag-handle {
-        display: none;
+        flex-shrink: 0;
+        touch-action: none;
     }
     
     /* Compress mode toggle mobile */
@@ -1365,29 +1373,37 @@ body {
     }
     
     .file-item {
-        display: flex !important;
+        display: flex;
         flex-wrap: nowrap;
         align-items: center;
         gap: 0.5rem;
         padding: 0.75rem;
         width: 100%;
         box-sizing: border-box;
+        overflow: hidden;
     }
     
     .drag-handle {
-        display: none !important;
+        flex-shrink: 0;
+        width: 20px;
+        touch-action: none;
+    }
+    
+    .drag-handle svg {
+        width: 16px;
+        height: 16px;
     }
     
     .file-icon {
-        width: 32px;
-        height: 32px;
-        min-width: 32px;
+        width: 28px;
+        height: 28px;
+        min-width: 28px;
         flex-shrink: 0;
     }
     
     .file-icon svg {
-        width: 16px;
-        height: 16px;
+        width: 14px;
+        height: 14px;
     }
     
     .file-info {
@@ -1397,16 +1413,17 @@ body {
     }
     
     .file-name {
-        font-size: 0.8rem;
+        font-size: 0.75rem;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
         display: block;
-        width: 100%;
+        max-width: 100%;
     }
     
     .file-size {
-        font-size: 0.7rem;
+        font-size: 0.65rem;
+        color: var(--text-muted);
     }
     
     .file-actions {
@@ -1415,8 +1432,13 @@ body {
     }
     
     .file-action-btn {
-        width: 28px;
-        height: 28px;
+        width: 26px;
+        height: 26px;
+    }
+    
+    .file-action-btn svg {
+        width: 12px;
+        height: 12px;
     }
     
     /* Result file mobile fix */
