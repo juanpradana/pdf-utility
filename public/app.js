@@ -1,6 +1,32 @@
 // Initialize PDF.js
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
+// ---------------------------------------------------------------------------
+// Safety helpers
+//
+// File names come from the user and are reflected into templates that are
+// assigned via innerHTML, so every user-controlled value must be escaped.
+// ---------------------------------------------------------------------------
+
+function escapeHtml(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+// Same escaping for values interpolated into HTML *attributes* (href, title...).
+const escapeAttr = escapeHtml;
+
+// Escape text destined for a javascript: URL context is not needed, but keep
+// one helper for building query strings safely.
+function encodeFileParam(value) {
+    return encodeURIComponent(String(value === null || value === undefined ? '' : value));
+}
+
 // Touch drag state
 let touchDragState = {
     dragging: false,
@@ -58,16 +84,18 @@ function showToast(message, type = 'success') {
     const container = document.getElementById('toast-container');
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
-    
-    const icon = type === 'success' ? 
+    toast.setAttribute('role', 'alert');
+    toast.setAttribute('aria-live', 'polite');
+
+    const icon = type === 'success' ?
         '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>' :
         type === 'error' ?
         '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>' :
         '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>';
-    
-    toast.innerHTML = `${icon}<span>${message}</span>`;
+
+    toast.innerHTML = `${icon}<span>${escapeHtml(message)}</span>`;
     container.appendChild(toast);
-    
+
     setTimeout(() => {
         toast.style.animation = 'slideIn 0.3s ease reverse';
         setTimeout(() => toast.remove(), 300);
@@ -136,6 +164,27 @@ document.addEventListener('click', (e) => {
 });
 
 function resetPanelState() {
+    // Detach any touch listeners registered for the outgoing panel.
+    while (touchDragCleanups.length > 0) {
+        try { touchDragCleanups.pop()(); } catch { /* ignore */ }
+    }
+
+    // PDF.js documents hold canvas references and web workers; destroy them
+    // explicitly so they don't leak memory across panel switches.
+    const destroyDoc = (doc) => {
+        if (doc && typeof doc.destroy === 'function') {
+            try { doc.destroy(); } catch { /* ignore */ }
+        }
+    };
+    for (const doc of state.mergePdfDocs.values()) destroyDoc(doc);
+    destroyDoc(state.splitPdfDoc);
+    destroyDoc(state.pdfToJpgDoc);
+    destroyDoc(state.organizePdfDoc);
+
+    // Stop lingering expiry timers.
+    for (const timer of state.expiryTimers.values()) clearInterval(timer);
+    state.expiryTimers.clear();
+
     state.mergeFiles = [];
     state.mergePages = [];
     state.mergePdfDocs.clear();
@@ -210,27 +259,92 @@ document.querySelectorAll('.feature-card').forEach(card => {
 });
 
 // File upload handling
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // must match the server's limit
+const MAX_UPLOAD_FILES = 50;
+const ALLOWED_UPLOAD_TYPES = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+
+/**
+ * Validate files before sending them, so obvious problems are reported
+ * immediately instead of after a full upload round-trip.
+ */
+function validateFiles(files) {
+    const list = Array.from(files || []);
+    if (list.length === 0) {
+        return { ok: false, message: 'Tidak ada file yang dipilih.' };
+    }
+    if (list.length > MAX_UPLOAD_FILES) {
+        return { ok: false, message: `Maksimal ${MAX_UPLOAD_FILES} file sekaligus.` };
+    }
+
+    for (const file of list) {
+        if (!ALLOWED_UPLOAD_TYPES.includes(file.type)) {
+            return { ok: false, message: `"${file.name}" bukan PDF atau gambar JPG/PNG.` };
+        }
+        if (file.size > MAX_UPLOAD_BYTES) {
+            return {
+                ok: false,
+                message: `"${file.name}" terlalu besar (${formatFileSize(file.size)}). Maksimal ${formatFileSize(MAX_UPLOAD_BYTES)}.`,
+            };
+        }
+    }
+    return { ok: true };
+}
+
 async function uploadFiles(files, type) {
+    // Validate before sending anything to the server.
+    const validation = validateFiles(files);
+    if (!validation.ok) {
+        showToast(validation.message, 'error');
+        throw new Error(validation.message);
+    }
+
     const formData = new FormData();
-    
+
     for (const file of files) {
         formData.append('files', file);
     }
-    
+
     try {
         showLoading('Mengunggah file...');
-        const response = await fetch('/api/upload', {
-            method: 'POST',
-            body: formData
+        // XMLHttpRequest gives us upload progress, which fetch cannot report.
+        const data = await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/upload');
+
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable) {
+                    const percent = Math.round((e.loaded / e.total) * 100);
+                    showLoading(`Mengunggah... ${percent}%`);
+                }
+            });
+
+            xhr.addEventListener('load', () => {
+                let parsed = {};
+                try {
+                    parsed = JSON.parse(xhr.responseText);
+                } catch {
+                    parsed = {};
+                }
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    resolve(parsed);
+                } else {
+                    reject(new Error(parsed.error || `Upload gagal (HTTP ${xhr.status}).`));
+                }
+            });
+
+            xhr.addEventListener('error', () => reject(new Error('Koneksi ke server gagal.')));
+            xhr.addEventListener('abort', () => reject(new Error('Upload dibatalkan.')));
+
+            xhr.send(formData);
         });
-        
-        const data = await response.json();
+
         hideLoading();
-        
-        if (!response.ok) {
-            throw new Error(data.error || 'Upload failed');
+
+        // Surface per-file rejections reported by the server's content check.
+        if (Array.isArray(data.rejected) && data.rejected.length > 0) {
+            showToast(`${data.rejected.length} file ditolak: ${data.rejected[0].reason}`, 'error');
         }
-        
+
         return data;
     } catch (error) {
         hideLoading();
@@ -328,11 +442,11 @@ function renderMergeFileList() {
                 </svg>
             </div>
             <div class="file-info">
-                <div class="file-name">${file.name}</div>
+                <div class="file-name">${escapeHtml(file.name)}</div>
                 <div class="file-size">${formatFileSize(file.size)}</div>
             </div>
             <div class="file-actions">
-                <button class="file-action-btn" onclick="removeMergeFile(${index})" title="Hapus">
+                <button class="file-action-btn" onclick="removeMergeFile(${index})" title="Hapus" aria-label="Hapus file">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="3 6 5 6 21 6"></polyline>
                         <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -481,7 +595,7 @@ async function renderMergePageGrid() {
             <canvas></canvas>
             <div class="merge-page-item-overlay">
                 <div class="merge-page-item-number">Hal ${page.pageIndex + 1}</div>
-                <div class="merge-page-item-source">${page.fileName}</div>
+                <div class="merge-page-item-source">${escapeHtml(page.fileName)}</div>
             </div>
         `;
         
@@ -620,7 +734,7 @@ async function handleSplitUpload(files) {
                 </svg>
             </div>
             <div class="pdf-info-details">
-                <h4>${state.splitFile.originalName}</h4>
+                <h4>${escapeHtml(state.splitFile.originalName)}</h4>
                 <p>${infoData.pageCount} halaman • ${formatFileSize(state.splitFile.size)}</p>
             </div>
         `;
@@ -824,7 +938,7 @@ async function handleCompressUpload(files) {
                 </svg>
             </div>
             <div class="pdf-info-details">
-                <h4>${state.compressFile.originalName}</h4>
+                <h4>${escapeHtml(state.compressFile.originalName)}</h4>
                 <p>Ukuran asli: ${formatFileSize(state.compressFile.size)}</p>
             </div>
         `;
@@ -1068,7 +1182,7 @@ function showCompressResult(data) {
                         </svg>
                     </div>
                     <div class="result-file-details">
-                        <h4>${data.filename}</h4>
+                        <h4>${escapeHtml(data.filename)}</h4>
                         <p>${formatFileSize(data.compressedSize)}</p>
                     </div>
                 </div>
@@ -1134,7 +1248,7 @@ async function handlePdfToJpgUpload(files) {
                 </svg>
             </div>
             <div class="pdf-info-details">
-                <h4>${state.pdfToJpgFile.originalName}</h4>
+                <h4>${escapeHtml(state.pdfToJpgFile.originalName)}</h4>
                 <p>${infoData.pageCount} halaman • ${formatFileSize(state.pdfToJpgFile.size)}</p>
             </div>
         `;
@@ -1337,11 +1451,11 @@ function renderJpgToPdfFileList() {
                 </svg>
             </div>
             <div class="file-info">
-                <div class="file-name">${file.name}</div>
+                <div class="file-name">${escapeHtml(file.name)}</div>
                 <div class="file-size">${formatFileSize(file.size)}</div>
             </div>
             <div class="file-actions">
-                <button class="file-action-btn" onclick="removeJpgToPdfFile(${index})" title="Hapus">
+                <button class="file-action-btn" onclick="removeJpgToPdfFile(${index})" title="Hapus" aria-label="Hapus file">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="3 6 5 6 21 6"></polyline>
                         <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -1677,7 +1791,7 @@ async function renderPageGrid() {
             <div class="page-item-overlay">
                 <div class="page-item-number">Hal ${page.index + 1}</div>
                 ${page.rotation ? `<div class="page-item-rotation">${page.rotation}°</div>` : ''}
-                ${isInserted ? `<div class="page-item-source">${page.sourceName || 'Inserted'}</div>` : ''}
+                ${isInserted ? `<div class="page-item-source">${escapeHtml(page.sourceName || 'Inserted')}</div>` : ''}
             </div>
         `;
         
@@ -1817,7 +1931,7 @@ function showResult(type, files) {
         
         <div class="result-files">
             ${files.map(file => `
-                <div class="result-file" id="result-file-${file.id}">
+                <div class="result-file" id="result-file-${escapeAttr(file.id)}">
                     <div class="result-file-info">
                         <div class="file-icon">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1826,12 +1940,12 @@ function showResult(type, files) {
                             </svg>
                         </div>
                         <div class="result-file-details">
-                            <h4>${file.name}</h4>
+                            <h4>${escapeHtml(file.name)}</h4>
                             <p>${formatFileSize(file.size)}</p>
                         </div>
                     </div>
                     <div class="result-actions">
-                        <a href="/api/download/${file.id}?filename=${encodeURIComponent(file.name)}" class="btn btn-primary" download>
+                        <a href="/api/download/${encodeFileParam(file.id)}?filename=${encodeFileParam(file.name)}" class="btn btn-primary" download>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                                 <polyline points="7 10 12 15 17 10"></polyline>
@@ -1839,7 +1953,7 @@ function showResult(type, files) {
                             </svg>
                             Download
                         </a>
-                        <button class="btn btn-danger btn-sm" onclick="deleteFile('${file.id}', '${type}')">
+                        <button class="btn btn-danger btn-sm" onclick="deleteFile('${escapeAttr(file.id)}', '${escapeAttr(type)}')">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <polyline points="3 6 5 6 21 6"></polyline>
                                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -1932,12 +2046,24 @@ async function deleteFile(fileId, type) {
     }
 }
 
-// Touch drag helper functions for mobile
+// Touch drag helper functions for mobile.
+// Returns a cleanup function that detaches its listeners — call it whenever
+// the panel is reset, otherwise listeners pile up on every re-init.
+const touchDragCleanups = [];
+
 function initTouchDrag(element, list, onReorder) {
     element.addEventListener('touchstart', handleTouchStart, { passive: false });
     element.addEventListener('touchmove', handleTouchMove, { passive: false });
     element.addEventListener('touchend', handleTouchEnd);
-    
+
+    const cleanup = () => {
+        element.removeEventListener('touchstart', handleTouchStart, { passive: false });
+        element.removeEventListener('touchmove', handleTouchMove, { passive: false });
+        element.removeEventListener('touchend', handleTouchEnd);
+    };
+    touchDragCleanups.push(cleanup);
+    return cleanup;
+
     function handleTouchStart(e) {
         if (e.touches.length !== 1) return;
         

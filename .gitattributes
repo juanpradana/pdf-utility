@@ -1,0 +1,22 @@
+# Normalize line endings so the repo is consistent across platforms.
+* text=auto eol=lf
+
+# These files are consumed by Linux tooling (Docker, shell, npm) where CRLF
+# breaks execution — a Dockerfile with CRLF endings fails to build.
+*.sh          text eol=lf
+Dockerfile    text eol=lf
+*.yml         text eol=lf
+*.yaml        text eol=lf
+*.js          text eol=lf
+*.json        text eol=lf
+*.css         text eol=lf
+*.html        text eol=lf
+*.md          text eol=lf
+
+# Binary assets should never be line-ending normalized.
+*.png         binary
+*.jpg         binary
+*.jpeg        binary
+*.gif         binary
+*.ico         binary
+*.pdf         binary

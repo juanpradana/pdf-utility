@@ -1,0 +1,56 @@
+services:
+  pdf-utility:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: pdf-utility:latest
+    container_name: pdf-utility
+    restart: unless-stopped
+
+    # Bound to localhost only: all external traffic arrives through the
+    # Nginx reverse proxy, which is the only component that should be public.
+    ports:
+      - "127.0.0.1:3001:3001"
+
+    env_file:
+      - .env
+
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      UPLOAD_DIR: /data/uploads
+      OUTPUT_DIR: /data/outputs
+      TRUST_PROXY: "true"
+
+    volumes:
+      - pdf-data:/data
+
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3001/api/health',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+
+    security_opt:
+      - no-new-privileges:true
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  pdf-data:
+    driver: local

@@ -1,0 +1,38 @@
+# Dependencies — reinstalled inside the image from the lockfile
+node_modules/
+
+# Runtime scratch space
+temp_uploads/
+temp_outputs/
+data/
+
+# Version control
+.git/
+.gitignore
+
+# Secrets and local configuration
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Tooling / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Project docs & CI that the runtime image does not need
+README.md
+LICENSE
+Dockerfile
+docker-compose.yml
+.dockerignore
