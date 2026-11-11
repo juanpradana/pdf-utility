@@ -351,6 +351,15 @@ async function loadUploadedPdf(fileId, options) {
     return { path: filePath, doc };
 }
 
+/** Like loadUploadedPdf, but also accepts a file already in the output dir. */
+async function loadAnyPdf(fileId, options) {
+    const filePath = findAnyFile(fileId);
+    if (!filePath || path.extname(filePath) !== '.pdf') return null;
+    const bytes = fs.readFileSync(filePath);
+    const doc = await PDFDocument.load(bytes, options);
+    return { path: filePath, doc };
+}
+
 // ---------------------------------------------------------------------------
 // API: upload
 // ---------------------------------------------------------------------------
@@ -669,7 +678,7 @@ app.post('/api/compress-save', async (req, res) => {
 
 app.get('/api/pdf-info/:fileId', async (req, res) => {
     try {
-        const loaded = await loadUploadedPdf(req.params.fileId);
+        const loaded = await loadAnyPdf(req.params.fileId);
         if (!loaded) return notFound(res);
 
         const { doc: pdf } = loaded;
