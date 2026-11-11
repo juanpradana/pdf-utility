@@ -122,7 +122,7 @@ nano .env                 # sesuaikan bila perlu
 
 # 2. Buat sertifikat self-signed untuk origin (sekali saja)
 chmod +x nginx/generate-ssl.sh
-./nginx/generate-ssl.sh pdf.farzani.my.id
+./nginx/generate-ssl.sh pdf.farzani.my.id farzani.my.id www.farzani.my.id
 
 # 3. Build dan jalankan
 docker compose up -d --build
@@ -132,10 +132,21 @@ docker compose ps
 docker compose logs -f
 ```
 
-Aplikasi akan tersedia di `https://<domain>` — HTTP otomatis di-redirect
-(301) ke HTTPS. Proxy memakai `/api/health` untuk memastikan `app` sehat
-sebelum dianggap siap, dan `proxy_set_header X-Forwarded-*` diteruskan
-sehingga `TRUST_PROXY=true` membuat rate limit menghitung IP asli klien.
+Aplikasi tersedia di **subdomain saja** (`https://pdf.farzani.my.id`); HTTP
+otomatis di-redirect (301) ke HTTPS. Nilai `server_name` subdomain dan host
+sertifikat diatur di `nginx/nginx.conf`.
+
+**Host lain — termasuk apex domain — mendapat halaman maintenance (503) dari
+`nginx/maintenance.html`, bukan aplikasi.** Jadi kalau DNS apex diarahkan ke
+server ini, pengunjung tetap melihat halaman "under maintenance", bukan
+aplikasi PDF. Tambahkan nama host lain ke `server_name` subdomain bila ingin
+melayaninya dari aplikasi.
+
+Proxy memakai `/api/health` untuk memastikan `app` sehat sebelum dianggap
+siap, dan `proxy_set_header X-Forwarded-*` diteruskan sehingga
+`TRUST_PROXY=true` membuat rate limit menghitung IP asli klien. Endpoint
+`/nginx-health` dijaga agar tetap `200` di **semua** host, karena healthcheck
+container memanggilnya sebagai `127.0.0.1` tanpa Host yang cocok.
 
 Perintah lain yang sering dipakai:
 
@@ -151,14 +162,22 @@ meskipun container di-rebuild.
 
 ### TLS
 
-`nginx/generate-ssl.sh` membuat sertifikat RSA 4096-bit yang berlaku 10 tahun
-untuk `pdf.farzani.my.id` (termasuk SAN `www`). Jika domain berada di balik
-Cloudflare, set mode SSL/TLS ke **Full (strict)** agar sertifikat origin ini
-diverifikasi. Untuk origin tanpa Cloudflare, ganti dengan Let's Encrypt:
+`nginx/generate-ssl.sh` membuat sertifikat RSA 4096-bit yang berlaku 10 tahun.
+Secara default ditandatangani untuk CN `pdf.farzani.my.id` dan SAN `www.pdf.farzani.my.id`.
+Argumen tambahan diteruskan sebagai subjectAltName, sehingga satu sertifikat bisa
+melayani app subdomain **dan** host maintenance:
+
+```bash
+./nginx/generate-ssl.sh pdf.farzani.my.id farzani.my.id www.farzani.my.id
+```
+
+Jika domain berada di balik Cloudflare, set mode SSL/TLS ke **Full (strict)**
+agar sertifikat origin ini diverifikasi. Untuk origin tanpa Cloudflare, ganti
+dengan Let's Encrypt:
 
 ```bash
 sudo apt install -y certbot
-sudo certbot certonly --webroot -w /var/www/certbot -d pdf.farzani.my.id
+sudo certbot certonly --webroot -w /var/www/certbot -d pdf.farzani.my.id -d farzani.my.id -d www.farzani.my.id
 # lalu arahkan ssl_certificate/ssl_certificate_key di nginx/nginx.conf
 # ke /etc/letsencrypt/live/pdf.farzani.my.id/{fullchain,privkey}.pem
 ```
