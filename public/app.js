@@ -108,23 +108,50 @@ function formatTime(seconds) {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
+// ---------------------------------------------------------------------------
+// Hash router
+//
+// Every tool lives at its own hash (/#/merge, /#/split, ...). That makes the
+// browser Back button behave the way people expect, and lets any tool be
+// bookmarked or reloaded without losing the page.
+// ---------------------------------------------------------------------------
+
+// Route key -> tool panel id suffix. Kept explicit so an unknown hash is
+// easy to spot.
+const ROUTES = new Set([
+    'merge',
+    'split',
+    'compress',
+    'pdf-to-jpg',
+    'jpg-to-pdf',
+    'organize',
+    'about'
+]);
+
+function routeFromHash() {
+    const raw = (window.location.hash || '').replace(/^#\/?/, '').trim();
+    return ROUTES.has(raw) ? raw : '';
+}
+
 // Panel management
 function openPanel(feature) {
     // Hide all panels first
     document.querySelectorAll('.tool-panel').forEach(p => p.style.display = 'none');
-    
+
     // Hide features grid
-    document.querySelector('.features').style.display = 'none';
-    document.querySelector('.hero').style.display = 'none';
-    
+    const features = document.querySelector('.features');
+    const hero = document.querySelector('.hero');
+    if (features) features.style.display = 'none';
+    if (hero) hero.style.display = 'none';
+
     // Show selected panel
     const panel = document.getElementById(`${feature}-panel`);
     if (panel) {
         panel.style.display = 'block';
         state.currentPanel = feature;
-        
-        // Scroll to panel
-        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        // Scroll to top of viewport with sticky header offset
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 }
 
@@ -132,26 +159,99 @@ function closePanel() {
     document.querySelectorAll('.tool-panel').forEach(p => p.style.display = 'none');
     document.querySelector('.features').style.display = 'block';
     document.querySelector('.hero').style.display = 'block';
-    
+
     // Reset state
     resetPanelState();
     state.currentPanel = null;
-    
+
     // Scroll to top
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+// goHome / showAbout stay as thin aliases so any inline handler and the hash
+// router agree on one implementation.
 function goHome() {
-    closePanel();
+    navigateTo('');
 }
 
 function showAbout() {
-    openPanel('about');
+    navigateTo('about');
+}
+
+/**
+ * Move to a route. Setting the hash pushes a history entry, so Back walks the
+ * user home / to the previous tool instead of leaving the app.
+ */
+function navigateTo(route) {
+    const target = route && ROUTES.has(route) ? `#/${route}` : '#/';
+    if (window.location.hash === target) {
+        handleRoute();
+        return;
+    }
+    window.location.hash = target;
+}
+
+/** Enter/Space on the home-page feature cards, which carry role="button". */
+function handleCardKeydown(event, feature) {
+    if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+        event.preventDefault();
+        navigateTo(feature);
+    }
+}
+
+function handleRoute() {
+    const route = routeFromHash();
+
+    // Mark the active nav link for assistive tech and visual orientation.
+    document.querySelectorAll('.nav-link').forEach(link => {
+        const isActive = link.getAttribute('href') === `#/${route}` ||
+            (route === '' && link.getAttribute('href') === '#/');
+        link.classList.toggle('active', isActive);
+        if (isActive) {
+            link.setAttribute('aria-current', 'page');
+        } else {
+            link.removeAttribute('aria-current');
+        }
+    });
+
+    if (route) {
+        openPanel(route);
+    } else {
+        closePanel();
+    }
+
+    // Keep the document title in step with the route.
+    const titles = {
+        merge: 'Gabungkan PDF',
+        split: 'Pisahkan PDF',
+        compress: 'Kompres PDF',
+        'pdf-to-jpg': 'PDF ke Gambar',
+        'jpg-to-pdf': 'Gambar ke PDF',
+        organize: 'Atur Halaman',
+        about: 'Tentang Aplikasi'
+    };
+    document.title = route
+        ? `${titles[route]} — Secure PDF Utility Suite`
+        : 'Secure PDF Utility Suite — Pemrosesan PDF Aman & Privat';
+}
+
+function scrollToFeatures() {
+    const features = document.getElementById('features');
+    if (!features) return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    features.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
 }
 
 function toggleMobileMenu() {
     const menu = document.getElementById('mobile-menu');
+    const btn = document.getElementById('mobile-menu-btn');
+    if (!menu) return;
+
+    const willOpen = !menu.classList.contains('active');
     menu.classList.toggle('active');
+    if (btn) {
+        btn.setAttribute('aria-expanded', String(willOpen));
+    }
 }
 
 // Close mobile menu when clicking outside
@@ -160,6 +260,7 @@ document.addEventListener('click', (e) => {
     const btn = document.querySelector('.nav-menu-btn');
     if (menu && !menu.contains(e.target) && !btn.contains(e.target)) {
         menu.classList.remove('active');
+        if (btn) btn.setAttribute('aria-expanded', 'false');
     }
 });
 
@@ -229,6 +330,38 @@ function resetPanelState() {
     if (mergePageGrid) mergePageGrid.innerHTML = '';
 }
 
+// ---------------------------------------------------------------------------
+// Keyboard page reordering
+//
+// Drag-and-drop is unusable without a mouse, so each thumbnail also carries
+// explicit move buttons. Reordering happens on the array the drag handler
+// already mutates, so both paths stay consistent.
+// ---------------------------------------------------------------------------
+
+/**
+ * Move an item in a page array and re-render.
+ * @param {Array}  pages   state array holding the page objects
+ * @param {number} from    index of the page to move
+ * @param {number} to      destination index
+ * @param {Function} render re-render callback for the affected grid
+ */
+function movePageInList(pages, from, to, render) {
+    if (from < 0 || from >= pages.length) return;
+    const target = Math.max(0, Math.min(pages.length - 1, to));
+    if (target === from) return;
+    const [moved] = pages.splice(from, 1);
+    pages.splice(target, 0, moved);
+    render();
+}
+
+function moveMergePage(index, direction) {
+    movePageInList(state.mergePages, index, index + direction, renderMergePageGrid);
+}
+
+function moveOrganizePage(index, direction) {
+    movePageInList(state.organizePages, index, index + direction, renderPageGrid);
+}
+
 // Render PDF page to canvas
 async function renderPageToCanvas(pdfDoc, pageNum, canvas, maxWidth = 200) {
     try {
@@ -250,13 +383,8 @@ async function renderPageToCanvas(pdfDoc, pageNum, canvas, maxWidth = 200) {
     }
 }
 
-// Feature card click handlers
-document.querySelectorAll('.feature-card').forEach(card => {
-    card.addEventListener('click', () => {
-        const feature = card.dataset.feature;
-        openPanel(feature);
-    });
-});
+// Feature cards route themselves via inline onclick/onkeydown, which call
+// navigateTo() — no extra listener here, so a click never fires twice.
 
 // File upload handling
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // must match the server's limit
@@ -371,6 +499,9 @@ function setupUploadZone(zoneId, inputId, handler) {
     
     zone.addEventListener('drop', (e) => {
         e.preventDefault();
+        // Stop here: the document-level handler would otherwise process the
+        // same files a second time.
+        e.stopPropagation();
         zone.classList.remove('dragover');
         const files = Array.from(e.dataTransfer.files);
         handler(files);
@@ -380,6 +511,14 @@ function setupUploadZone(zoneId, inputId, handler) {
         const files = Array.from(e.target.files);
         handler(files);
         input.value = '';
+    });
+
+    // The zone is tabindex="0" role="button"; Enter/Space must open the picker.
+    zone.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+            e.preventDefault();
+            input.click();
+        }
     });
 }
 
@@ -593,6 +732,14 @@ async function renderMergePageGrid() {
         
         item.innerHTML = `
             <canvas></canvas>
+            <div class="page-reorder-controls">
+                <button type="button" class="page-move-btn" onclick="moveMergePage(${index}, -1)" ${index === 0 ? 'disabled' : ''} aria-label="Pindahkan halaman ${index + 1} ke urutan sebelumnya" title="Geser ke kiri">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                </button>
+                <button type="button" class="page-move-btn" onclick="moveMergePage(${index}, 1)" ${index === state.mergePages.length - 1 ? 'disabled' : ''} aria-label="Pindahkan halaman ${index + 1} ke urutan sesudahnya" title="Geser ke kanan">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+            </div>
             <div class="merge-page-item-overlay">
                 <div class="merge-page-item-number">Hal ${page.pageIndex + 1}</div>
                 <div class="merge-page-item-source">${escapeHtml(page.fileName)}</div>
@@ -1595,11 +1742,14 @@ function setupOrganizeDropzone() {
     
     dropzone.addEventListener('drop', async (e) => {
         e.preventDefault();
+        // Handled here as an "insert pages" drop — keep it away from the
+        // document-level handler, which would treat it as a fresh upload.
+        e.stopPropagation();
         dropzone.classList.remove('drag-over');
-        
+
         const files = Array.from(e.dataTransfer.files);
         const pdfFile = files.find(f => f.type === 'application/pdf');
-        
+
         if (pdfFile) {
             await handleInsertPdfFile(pdfFile);
         }
@@ -1772,6 +1922,14 @@ async function renderPageGrid() {
         
         item.innerHTML = `
             <canvas></canvas>
+            <div class="page-reorder-controls">
+                <button type="button" class="page-move-btn" onclick="moveOrganizePage(${index}, -1)" ${index === 0 ? 'disabled' : ''} aria-label="Pindahkan halaman ${index + 1} ke urutan sebelumnya" title="Geser ke kiri">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                </button>
+                <button type="button" class="page-move-btn" onclick="moveOrganizePage(${index}, 1)" ${index === state.organizePages.length - 1 ? 'disabled' : ''} aria-label="Pindahkan halaman ${index + 1} ke urutan sesudahnya" title="Geser ke kanan">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+            </div>
             <div class="page-item-actions">
                 <button class="page-action-btn rotate" onclick="rotatePage(${index})" title="Putar 90°">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1781,7 +1939,7 @@ async function renderPageGrid() {
                 </button>
                 <button class="page-action-btn delete" onclick="toggleDeletePage(${index})" title="${page.deleted ? 'Pulihkan' : 'Hapus'}">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        ${page.deleted ? 
+                        ${page.deleted ?
                             '<path d="M3 12l5 5L21 6"></path>' :
                             '<polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>'
                         }
@@ -2133,7 +2291,227 @@ function initTouchDrag(element, list, onReorder) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Theme engine
+//
+// An explicit stored choice wins; otherwise Obsidian Slate (dark) is the
+// default regardless of OS preference. The <html> element already ships with
+// data-theme="dark" so there is no flash of the wrong palette before this runs.
+// ---------------------------------------------------------------------------
+
+const THEME_STORAGE_KEY = 'pdf-utility-theme';
+
+function preferredTheme() {
+    try {
+        const stored = localStorage.getItem(THEME_STORAGE_KEY);
+        if (stored === 'dark' || stored === 'light') return stored;
+    } catch { /* storage can be unavailable in private mode */ }
+
+    // Dark is the app's identity, not a fallback: Obsidian Slate stays the
+    // default for everyone, and light mode is an explicit opt-in via the
+    // header toggle. This also matches <html data-theme="dark">, so there is
+    // never a flash of the wrong palette.
+    return 'dark';
+}
+
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) {
+        meta.setAttribute('content', theme === 'light' ? '#f4f6fa' : '#0b0f17');
+    }
+    const btn = document.getElementById('theme-toggle-btn');
+    if (btn) {
+        btn.setAttribute(
+            'aria-label',
+            theme === 'light' ? 'Ganti ke mode gelap' : 'Ganti ke mode terang'
+        );
+        btn.setAttribute('aria-pressed', String(theme === 'light'));
+    }
+}
+
+function initTheme() {
+    applyTheme(preferredTheme());
+}
+
+function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme') || 'dark';
+    const next = current === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    try {
+        localStorage.setItem(THEME_STORAGE_KEY, next);
+    } catch { /* ignore */ }
+}
+
+// ---------------------------------------------------------------------------
+// Global drag and drop
+//
+// Without this the browser navigates away and renders the dropped PDF itself,
+// losing anything in progress. Dropping anywhere lands the file in the tool
+// that is currently open, or picks a sensible tool from the upload.
+// ---------------------------------------------------------------------------
+
+let globalDragDepth = 0;
+
+function isFileDrag(event) {
+    const types = event.dataTransfer && event.dataTransfer.types;
+    return !!types && Array.prototype.indexOf.call(types, 'Files') !== -1;
+}
+
+function showGlobalDropOverlay() {
+    const overlay = document.getElementById('global-drop-overlay');
+    if (!overlay) return;
+    overlay.classList.add('active');
+    overlay.setAttribute('aria-hidden', 'false');
+}
+
+function hideGlobalDropOverlay() {
+    const overlay = document.getElementById('global-drop-overlay');
+    if (!overlay) return;
+    overlay.classList.remove('active');
+    overlay.setAttribute('aria-hidden', 'true');
+    globalDragDepth = 0;
+}
+
+/** Upload handler belonging to the tool that is currently on screen. */
+function activeUploadHandler() {
+    switch (state.currentPanel) {
+        case 'merge': return handleMergeUpload;
+        case 'split': return handleSplitUpload;
+        case 'compress': return handleCompressUpload;
+        case 'pdf-to-jpg': return handlePdfToJpgUpload;
+        case 'jpg-to-pdf': return handleJpgToPdfUpload;
+        case 'organize': return handleOrganizeUpload;
+        default: return null;
+    }
+}
+
+/** Choose the most likely tool when files are dropped on the home page. */
+function routeDroppedFiles(files) {
+    const list = Array.from(files || []);
+    if (list.length === 0) return;
+
+    const hasPdf = list.some(f => f.type === 'application/pdf');
+    const hasImage = list.some(f => f.type === 'image/jpeg' || f.type === 'image/png');
+    const pdfs = list.filter(f => f.type === 'application/pdf');
+    const images = list.filter(f => f.type === 'image/jpeg' || f.type === 'image/png');
+
+    // Mixed drops are ambiguous — let the person pick the tool themselves.
+    if (hasPdf && hasImage) {
+        showToast('Campur PDF dan gambar. Pilih alat yang ingin dipakai lebih dulu.', 'error');
+        scrollToFeatures();
+        return;
+    }
+
+    if (hasImage) {
+        navigateTo('jpg-to-pdf');
+        handleJpgToPdfUpload(images);
+        return;
+    }
+
+    if (pdfs.length > 1) {
+        navigateTo('merge');
+        handleMergeUpload(pdfs);
+        return;
+    }
+
+    if (pdfs.length === 1) {
+        navigateTo('organize');
+        handleOrganizeUpload(pdfs);
+    }
+}
+
+function setupGlobalDragAndDrop() {
+    const overlay = document.getElementById('global-drop-overlay');
+
+    document.addEventListener('dragenter', (e) => {
+        if (!isFileDrag(e)) return;
+        e.preventDefault();
+        globalDragDepth++;
+        showGlobalDropOverlay();
+    });
+
+    document.addEventListener('dragover', (e) => {
+        if (!isFileDrag(e)) return;
+        // Required so the browser hands us the drop instead of opening the file.
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+    });
+
+    document.addEventListener('dragleave', (e) => {
+        if (!isFileDrag(e)) return;
+        globalDragDepth = Math.max(0, globalDragDepth - 1);
+        if (globalDragDepth === 0) hideGlobalDropOverlay();
+    });
+
+    document.addEventListener('drop', async (e) => {
+        if (!isFileDrag(e)) return;
+        e.preventDefault();
+        hideGlobalDropOverlay();
+
+        const files = Array.from(e.dataTransfer.files || []);
+        if (files.length === 0) return;
+
+        const handler = activeUploadHandler();
+        if (handler) {
+            handler(files);
+            return;
+        }
+
+        routeDroppedFiles(files);
+    });
+
+    // Safety net: a drag that ends outside the window leaves no dragleave.
+    window.addEventListener('dragend', hideGlobalDropOverlay);
+    window.addEventListener('blur', hideGlobalDropOverlay);
+
+    if (overlay) {
+        overlay.addEventListener('dragover', (e) => {
+            if (isFileDrag(e)) e.preventDefault();
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Home hero: pick files first, then choose the tool
+// ---------------------------------------------------------------------------
+
+function setupHeroFileInput() {
+    const input = document.getElementById('hero-file-input');
+    if (!input) return;
+
+    input.addEventListener('change', () => {
+        const files = Array.from(input.files || []);
+        input.value = '';
+        if (files.length === 0) return;
+        routeDroppedFiles(files);
+    });
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+    initTheme();
+    setupHeroFileInput();
+    setupGlobalDragAndDrop();
+
+    // Esc closes the mobile menu, the way people expect on a phone.
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        const menu = document.getElementById('mobile-menu');
+        const btn = document.getElementById('mobile-menu-btn');
+        if (menu && menu.classList.contains('active')) {
+            menu.classList.remove('active');
+            if (btn) {
+                btn.setAttribute('aria-expanded', 'false');
+                btn.focus();
+            }
+        }
+    });
+
+    // Router boot: honour a bookmarked hash (or the plain page) and react to
+    // Back/Forward and manual hash edits from then on.
+    window.addEventListener('hashchange', handleRoute);
+    handleRoute();
+
     console.log('Secure PDF Utility Suite initialized');
 });

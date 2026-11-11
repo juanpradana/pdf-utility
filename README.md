@@ -77,7 +77,7 @@ npm run dev
 | **PDF Processing** | pdf-lib |
 | **PDF Rendering** | PDF.js (client-side) |
 | **Security** | helmet, express-rate-limit, cors |
-| **Frontend** | Vanilla JS, Glassmorphism UI |
+| **Frontend** | Vanilla JS, Obsidian Slate dark-first theme (+ light mode), hash routing |
 | **Reverse Proxy** | Nginx (bundled in Docker Compose) |
 
 > Tidak ada native dependency (`sharp`, `poppler`, dll) — semua operasi PDF
@@ -105,7 +105,7 @@ secure-pdf-utility-suite/
 │   └── certbot-www/        # ACME HTTP-01 webroot (git-ignored)
 ├── public/
 │   ├── index.html         # Frontend HTML
-│   ├── styles.css         # Glassmorphism CSS styles
+│   ├── styles.css         # Design tokens & styles (dark-first + light theme)
 │   └── app.js             # Frontend JavaScript
 ├── temp_uploads/          # Temporary upload storage (auto-created)
 └── temp_outputs/          # Processed files storage (auto-created)

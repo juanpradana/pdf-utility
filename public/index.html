@@ -1,687 +1,838 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="id" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure PDF Utility Suite</title>
+    <meta name="theme-color" content="#0b0f17">
+    <meta name="description" content="Secure PDF Utility Suite — Pemrosesan PDF aman, cepat, dan 100% self-hosted tanpa pihak ketiga.">
+    <title>Secure PDF Utility Suite — Pemrosesan PDF Aman & Privat</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
-    <div class="background-gradient"></div>
-    
-    <header class="header glass">
-        <div class="container">
-            <a href="#" class="logo" onclick="goHome(); return false;">
-                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                    <polyline points="14 2 14 8 20 8"></polyline>
-                    <path d="M12 18v-6"></path>
-                    <path d="M9 15l3 3 3-3"></path>
+    <!-- Global Drag and Drop Overlay -->
+    <div class="global-drop-overlay" id="global-drop-overlay" aria-hidden="true">
+        <div class="global-drop-content">
+            <div class="global-drop-icon">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
                 </svg>
-                <span>Secure PDF Suite</span>
+            </div>
+            <p class="global-drop-title">Lepaskan file di sini</p>
+            <p class="global-drop-subtitle">File PDF atau gambar akan langsung diproses</p>
+        </div>
+    </div>
+
+    <!-- Background Pattern -->
+    <div class="background-pattern" aria-hidden="true"></div>
+
+    <header class="header">
+        <div class="container header-container">
+            <a href="#/" class="logo" onclick="navigateTo(''); return false;" aria-label="Secure PDF Suite Beranda">
+                <div class="logo-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <path d="M12 18v-6"></path>
+                        <path d="M9 15l3 3 3-3"></path>
+                    </svg>
+                </div>
+                <div class="logo-text">
+                    <span class="logo-title">Secure PDF</span>
+                    <span class="logo-badge">Suite</span>
+                </div>
             </a>
-            <nav class="nav">
+
+            <nav class="nav" aria-label="Navigasi Utama">
                 <!-- Desktop Navigation -->
                 <div class="nav-desktop">
-                    <a href="#" class="nav-link" onclick="openPanel('merge'); return false;">Merge</a>
-                    <a href="#" class="nav-link" onclick="openPanel('split'); return false;">Split</a>
-                    <a href="#" class="nav-link" onclick="openPanel('compress'); return false;">Compress</a>
-                    <a href="#" class="nav-link" onclick="openPanel('pdf-to-jpg'); return false;">PDF→JPG</a>
-                    <a href="#" class="nav-link" onclick="openPanel('jpg-to-pdf'); return false;">JPG→PDF</a>
-                    <a href="#" class="nav-link" onclick="openPanel('organize'); return false;">Organize</a>
-                    <a href="#" class="nav-link" onclick="showAbout(); return false;">Tentang</a>
+                    <a href="#/merge" class="nav-link" onclick="navigateTo('merge'); return false;">Gabung</a>
+                    <a href="#/split" class="nav-link" onclick="navigateTo('split'); return false;">Pisah</a>
+                    <a href="#/compress" class="nav-link" onclick="navigateTo('compress'); return false;">Kompres</a>
+                    <a href="#/pdf-to-jpg" class="nav-link" onclick="navigateTo('pdf-to-jpg'); return false;">PDF ke JPG</a>
+                    <a href="#/jpg-to-pdf" class="nav-link" onclick="navigateTo('jpg-to-pdf'); return false;">JPG ke PDF</a>
+                    <a href="#/organize" class="nav-link" onclick="navigateTo('organize'); return false;">Atur Halaman</a>
+                    <a href="#/about" class="nav-link" onclick="navigateTo('about'); return false;">Tentang</a>
                 </div>
+
+                <!-- Theme Switcher -->
+                <button class="theme-toggle-btn" id="theme-toggle-btn" aria-label="Ganti mode terang atau gelap" title="Ganti mode terang/gelap" onclick="toggleTheme()">
+                    <svg class="sun-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                    <svg class="moon-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                </button>
+
                 <!-- Mobile Navigation -->
                 <div class="nav-mobile">
-                    <button class="nav-menu-btn" onclick="toggleMobileMenu()">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <button class="nav-menu-btn" id="mobile-menu-btn" aria-label="Buka menu navigasi" aria-expanded="false" aria-controls="mobile-menu" onclick="toggleMobileMenu()">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <line x1="3" y1="12" x2="21" y2="12"></line>
                             <line x1="3" y1="6" x2="21" y2="6"></line>
                             <line x1="3" y1="18" x2="21" y2="18"></line>
                         </svg>
                     </button>
-                    <div class="nav-mobile-menu glass" id="mobile-menu">
-                        <a href="#" onclick="openPanel('merge'); toggleMobileMenu(); return false;">Merge PDF</a>
-                        <a href="#" onclick="openPanel('split'); toggleMobileMenu(); return false;">Split PDF</a>
-                        <a href="#" onclick="openPanel('compress'); toggleMobileMenu(); return false;">Compress PDF</a>
-                        <a href="#" onclick="openPanel('pdf-to-jpg'); toggleMobileMenu(); return false;">PDF ke JPG</a>
-                        <a href="#" onclick="openPanel('jpg-to-pdf'); toggleMobileMenu(); return false;">JPG ke PDF</a>
-                        <a href="#" onclick="openPanel('organize'); toggleMobileMenu(); return false;">Organize PDF</a>
-                        <a href="#" onclick="showAbout(); toggleMobileMenu(); return false;">Tentang</a>
+                    <div class="nav-mobile-menu" id="mobile-menu" role="menu">
+                        <a href="#/merge" role="menuitem" onclick="navigateTo('merge'); toggleMobileMenu(); return false;">Gabungkan PDF</a>
+                        <a href="#/split" role="menuitem" onclick="navigateTo('split'); toggleMobileMenu(); return false;">Pisahkan PDF</a>
+                        <a href="#/compress" role="menuitem" onclick="navigateTo('compress'); toggleMobileMenu(); return false;">Kompres PDF</a>
+                        <a href="#/pdf-to-jpg" role="menuitem" onclick="navigateTo('pdf-to-jpg'); toggleMobileMenu(); return false;">PDF ke JPG</a>
+                        <a href="#/jpg-to-pdf" role="menuitem" onclick="navigateTo('jpg-to-pdf'); toggleMobileMenu(); return false;">JPG ke PDF</a>
+                        <a href="#/organize" role="menuitem" onclick="navigateTo('organize'); toggleMobileMenu(); return false;">Atur Halaman</a>
+                        <a href="#/about" role="menuitem" onclick="navigateTo('about'); toggleMobileMenu(); return false;">Tentang Aplikasi</a>
                     </div>
                 </div>
             </nav>
         </div>
     </header>
 
-    <main class="main">
-        <section class="hero">
-            <div class="container">
-                <h1>Pemrosesan PDF <span class="gradient-text">Aman & Privat</span></h1>
-                <p class="hero-subtitle">100% Self-Hosted. File Anda tidak pernah meninggalkan server Anda.</p>
+    <main class="main" id="main-content">
+        <!-- Hero Section -->
+        <section class="hero" id="hero-section">
+            <div class="container hero-container">
+                <div class="hero-copy">
+                    <h1 class="hero-title">Berkas PDF Anda tidak perlu meninggalkan server ini.</h1>
+                    <p class="hero-subtitle">Gabungkan, pisahkan, kompres, konversi, dan susun ulang halaman dokumen. Semua diproses lokal di server ini, lalu dihapus permanen setelah 30 menit.</p>
+                    <div class="hero-actions">
+                        <label class="btn btn-primary btn-lg" for="hero-file-input">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="17 8 12 3 7 8"></polyline>
+                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                            </svg>
+                            <span>Pilih berkas</span>
+                            <input type="file" id="hero-file-input" multiple accept=".pdf,.jpg,.jpeg,.png" class="visually-hidden">
+                        </label>
+                        <button class="btn btn-ghost btn-lg" onclick="scrollToFeatures()">
+                            <span>Lihat semua alat</span>
+                        </button>
+                    </div>
+                    <p class="hero-note">Belum tahu mau diapakan? Pilih berkas, lalu tentukan alatnya.</p>
+                </div>
+
+                <!-- Document motif: shows the actual job — pages in, one document out -->
+                <div class="hero-motif" aria-hidden="true">
+                    <svg viewBox="0 0 320 260" class="motif-svg" role="presentation">
+                        <!-- Scattered incoming pages -->
+                        <g class="motif-scatter">
+                            <rect x="8" y="30" width="76" height="100" rx="3" class="motif-page motif-page-far" transform="rotate(-8 46 80)"></rect>
+                            <rect x="20" y="52" width="76" height="100" rx="3" class="motif-page motif-page-mid" transform="rotate(-3 58 102)"></rect>
+                            <rect x="30" y="74" width="76" height="100" rx="3" class="motif-page"></rect>
+                            <line x1="42" y1="92" x2="86" y2="92" class="motif-rule"></line>
+                            <line x1="42" y1="104" x2="94" y2="104" class="motif-rule"></line>
+                            <line x1="42" y1="116" x2="78" y2="116" class="motif-rule"></line>
+                        </g>
+
+                        <!-- Flow -->
+                        <path d="M132 124 H 186" class="motif-flow"></path>
+                        <path d="M178 116 l 10 8 -10 8" class="motif-flow-head"></path>
+
+                        <!-- Resulting bound document -->
+                        <g class="motif-result">
+                            <rect x="206" y="42" width="94" height="164" rx="4" class="motif-doc"></rect>
+                            <line x1="206" y1="42" x2="206" y2="206" class="motif-spine"></line>
+                            <line x1="222" y1="70" x2="284" y2="70" class="motif-rule"></line>
+                            <line x1="222" y1="86" x2="284" y2="86" class="motif-rule"></line>
+                            <line x1="222" y1="102" x2="266" y2="102" class="motif-rule"></line>
+                            <line x1="222" y1="126" x2="284" y2="126" class="motif-rule"></line>
+                            <line x1="222" y1="142" x2="272" y2="142" class="motif-rule"></line>
+                            <line x1="222" y1="166" x2="284" y2="166" class="motif-rule"></line>
+                        </g>
+                    </svg>
+                </div>
             </div>
         </section>
 
-        <section id="features" class="features">
+        <!-- Features Grid -->
+        <section id="features" class="features" aria-label="Daftar Alat PDF">
             <div class="container">
+                <div class="features-heading">
+                    <h2>Enam alat, satu alur kerja</h2>
+                    <p>Pilih alat untuk mulai memproses berkas Anda.</p>
+                </div>
                 <div class="features-grid">
                     <!-- Merge PDF -->
-                    <div class="feature-card glass" data-feature="merge">
-                        <div class="feature-icon">
-                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <rect x="2" y="3" width="6" height="18" rx="1"></rect>
-                                <rect x="16" y="3" width="6" height="18" rx="1"></rect>
-                                <path d="M8 12h8"></path>
-                                <path d="M12 8l4 4-4 4"></path>
-                            </svg>
+                    <div class="feature-card" data-feature="merge" role="button" tabindex="0" onclick="navigateTo('merge')" onkeydown="handleCardKeydown(event, 'merge')" aria-label="Buka alat Gabungkan PDF">
+                        <div class="feature-header">
+                            <div class="feature-icon merge-icon">
+                                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="2" y="3" width="6" height="18" rx="1"></rect>
+                                    <rect x="16" y="3" width="6" height="18" rx="1"></rect>
+                                    <path d="M8 12h8"></path>
+                                    <path d="M12 8l4 4-4 4"></path>
+                                </svg>
+                            </div>
+                            <span class="feature-arrow">&rarr;</span>
                         </div>
-                        <h3>Merge PDF</h3>
-                        <p>Gabungkan beberapa file PDF menjadi satu dokumen</p>
+                        <h3>Gabungkan PDF</h3>
+                        <p>Satukan beberapa berkas PDF menjadi satu dokumen utuh dengan urutan kustom.</p>
                     </div>
 
                     <!-- Split PDF -->
-                    <div class="feature-card glass" data-feature="split">
-                        <div class="feature-icon">
-                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <rect x="2" y="3" width="8" height="18" rx="1"></rect>
-                                <rect x="14" y="3" width="8" height="18" rx="1"></rect>
-                                <path d="M12 8v8"></path>
-                                <path d="M8 12h-2"></path>
-                                <path d="M18 12h-2"></path>
-                            </svg>
+                    <div class="feature-card" data-feature="split" role="button" tabindex="0" onclick="navigateTo('split')" onkeydown="handleCardKeydown(event, 'split')" aria-label="Buka alat Pisahkan PDF">
+                        <div class="feature-header">
+                            <div class="feature-icon split-icon">
+                                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="2" y="3" width="8" height="18" rx="1"></rect>
+                                    <rect x="14" y="3" width="8" height="18" rx="1"></rect>
+                                    <path d="M12 8v8"></path>
+                                    <path d="M8 12h-2"></path>
+                                    <path d="M18 12h-2"></path>
+                                </svg>
+                            </div>
+                            <span class="feature-arrow">&rarr;</span>
                         </div>
-                        <h3>Split PDF</h3>
-                        <p>Pisahkan PDF berdasarkan halaman atau rentang</p>
+                        <h3>Pisahkan PDF</h3>
+                        <p>Ekstrak semua halaman atau pisahkan dokumen berdasarkan rentang halaman pilihan.</p>
                     </div>
 
                     <!-- Compress PDF -->
-                    <div class="feature-card glass" data-feature="compress">
-                        <div class="feature-icon">
-                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M12 3v12"></path>
-                                <path d="M8 11l4 4 4-4"></path>
-                                <path d="M4 19h16"></path>
-                                <path d="M4 15h16"></path>
-                            </svg>
+                    <div class="feature-card" data-feature="compress" role="button" tabindex="0" onclick="navigateTo('compress')" onkeydown="handleCardKeydown(event, 'compress')" aria-label="Buka alat Kompres PDF">
+                        <div class="feature-header">
+                            <div class="feature-icon compress-icon">
+                                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 3v12"></path>
+                                    <path d="M8 11l4 4 4-4"></path>
+                                    <path d="M4 19h16"></path>
+                                    <path d="M4 15h16"></path>
+                                </svg>
+                            </div>
+                            <span class="feature-arrow">&rarr;</span>
                         </div>
-                        <h3>Compress PDF</h3>
-                        <p>Kurangi ukuran file PDF dengan berbagai level</p>
+                        <h3>Kompres PDF</h3>
+                        <p>Perkecil ukuran berkas PDF dengan mode level kompresi atau target ukuran spesifik.</p>
                     </div>
 
                     <!-- PDF to JPG -->
-                    <div class="feature-card glass" data-feature="pdf-to-jpg">
-                        <div class="feature-icon">
-                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <rect x="3" y="3" width="18" height="18" rx="2"></rect>
-                                <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                                <path d="M21 15l-5-5L5 21"></path>
-                            </svg>
+                    <div class="feature-card" data-feature="pdf-to-jpg" role="button" tabindex="0" onclick="navigateTo('pdf-to-jpg')" onkeydown="handleCardKeydown(event, 'pdf-to-jpg')" aria-label="Buka alat PDF ke JPG">
+                        <div class="feature-header">
+                            <div class="feature-icon pdf2jpg-icon">
+                                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                    <path d="M21 15l-5-5L5 21"></path>
+                                </svg>
+                            </div>
+                            <span class="feature-arrow">&rarr;</span>
                         </div>
                         <h3>PDF ke JPG</h3>
-                        <p>Konversi halaman PDF menjadi gambar JPG</p>
+                        <p>Ubah setiap halaman dokumen PDF menjadi gambar JPG berkualitas tinggi.</p>
                     </div>
 
                     <!-- JPG to PDF -->
-                    <div class="feature-card glass" data-feature="jpg-to-pdf">
-                        <div class="feature-icon">
-                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                <polyline points="14 2 14 8 20 8"></polyline>
-                                <rect x="8" y="12" width="8" height="6" rx="1"></rect>
-                            </svg>
+                    <div class="feature-card" data-feature="jpg-to-pdf" role="button" tabindex="0" onclick="navigateTo('jpg-to-pdf')" onkeydown="handleCardKeydown(event, 'jpg-to-pdf')" aria-label="Buka alat JPG ke PDF">
+                        <div class="feature-header">
+                            <div class="feature-icon jpg2pdf-icon">
+                                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                    <polyline points="14 2 14 8 20 8"></polyline>
+                                    <rect x="8" y="12" width="8" height="6" rx="1"></rect>
+                                </svg>
+                            </div>
+                            <span class="feature-arrow">&rarr;</span>
                         </div>
                         <h3>JPG ke PDF</h3>
-                        <p>Gabungkan gambar JPG/PNG menjadi PDF</p>
+                        <p>Gabungkan gambar format JPG atau PNG menjadi satu dokumen PDF siap cetak.</p>
                     </div>
 
                     <!-- Organize PDF -->
-                    <div class="feature-card glass" data-feature="organize">
-                        <div class="feature-icon">
-                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <rect x="3" y="3" width="7" height="9" rx="1"></rect>
-                                <rect x="14" y="3" width="7" height="5" rx="1"></rect>
-                                <rect x="14" y="12" width="7" height="9" rx="1"></rect>
-                                <rect x="3" y="16" width="7" height="5" rx="1"></rect>
-                            </svg>
+                    <div class="feature-card" data-feature="organize" role="button" tabindex="0" onclick="navigateTo('organize')" onkeydown="handleCardKeydown(event, 'organize')" aria-label="Buka alat Atur Halaman PDF">
+                        <div class="feature-header">
+                            <div class="feature-icon organize-icon">
+                                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="3" y="3" width="7" height="9" rx="1"></rect>
+                                    <rect x="14" y="3" width="7" height="5" rx="1"></rect>
+                                    <rect x="14" y="12" width="7" height="9" rx="1"></rect>
+                                    <rect x="3" y="16" width="7" height="5" rx="1"></rect>
+                                </svg>
+                            </div>
+                            <span class="feature-arrow">&rarr;</span>
                         </div>
-                        <h3>Organize PDF</h3>
-                        <p>Putar, hapus, dan susun ulang halaman PDF</p>
+                        <h3>Atur Halaman PDF</h3>
+                        <p>Putar, hapus, tambahkan berkas lain, dan susun ulang posisi halaman PDF secara visual.</p>
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- Tool Panels -->
+        <!-- Tool Panels Section -->
         <section class="tool-section" id="tool-section">
             <div class="container">
                 <!-- Merge Panel -->
-                <div class="tool-panel glass" id="merge-panel" style="display: none;">
+                <div class="tool-panel" id="merge-panel" style="display: none;">
                     <div class="panel-header">
-                        <button class="back-btn" onclick="closePanel()">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <button class="back-btn" onclick="navigateTo(''); return false;" aria-label="Kembali ke Beranda">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M19 12H5"></path>
                                 <path d="M12 19l-7-7 7-7"></path>
                             </svg>
-                            Kembali
+                            <span>Beranda</span>
                         </button>
-                        <h2>Merge PDF</h2>
-                    </div>
-                    
-                    <div class="upload-zone" id="merge-upload-zone">
-                        <div class="upload-content">
-                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="17 8 12 3 7 8"></polyline>
-                                <line x1="12" y1="3" x2="12" y2="15"></line>
-                            </svg>
-                            <p>Drag & drop file PDF di sini</p>
-                            <span>atau</span>
-                            <label class="btn btn-primary">
-                                Pilih File
-                                <input type="file" id="merge-file-input" multiple accept=".pdf" hidden>
-                            </label>
-                            <p class="upload-hint">Maksimal 50MB per file</p>
+                        <div class="panel-title-group">
+                            <h2>Gabungkan PDF</h2>
+                            <p class="panel-desc">Satukan beberapa dokumen PDF menjadi satu berkas terurut</p>
                         </div>
                     </div>
-                    
-                    <div class="file-list" id="merge-file-list"></div>
-                    
+
+                    <div class="upload-zone" id="merge-upload-zone" tabindex="0" role="button" aria-label="Area unggah berkas PDF untuk digabungkan">
+                        <div class="upload-content">
+                            <div class="upload-icon-circle">
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="17 8 12 3 7 8"></polyline>
+                                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                                </svg>
+                            </div>
+                            <p class="upload-main-text">Tarik & lepaskan file PDF ke area ini</p>
+                            <span class="upload-or">atau</span>
+                            <label class="btn btn-primary" for="merge-file-input">
+                                <span>Pilih Berkas PDF</span>
+                                <input type="file" id="merge-file-input" multiple accept=".pdf" class="visually-hidden">
+                            </label>
+                            <p class="upload-hint">Format PDF &bull; Maksimal 50MB per berkas &bull; Hingga 50 berkas</p>
+                        </div>
+                    </div>
+
+                    <div class="file-list" id="merge-file-list" aria-live="polite"></div>
+
                     <div class="merge-preview-section" id="merge-preview-section" style="display: none;">
                         <div class="merge-preview-header">
-                            <h4>Preview Halaman</h4>
-                            <span class="hint">Drag untuk menyusun ulang</span>
+                            <div>
+                                <h4>Pratinjau Halaman</h4>
+                                <span class="hint">Tarik thumbnail atau gunakan tombol panah untuk mengatur urutan</span>
+                            </div>
                         </div>
                         <div class="merge-page-grid" id="merge-page-grid"></div>
                     </div>
-                    
+
                     <div class="action-bar" id="merge-action-bar" style="display: none;">
                         <button class="btn btn-secondary btn-lg" onclick="toggleMergePreview()">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                                 <circle cx="12" cy="12" r="3"></circle>
                             </svg>
-                            <span id="merge-preview-btn-text">Lihat Preview</span>
+                            <span id="merge-preview-btn-text">Pratinjau Halaman</span>
                         </button>
                         <button class="btn btn-primary btn-lg" onclick="processMerge()">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <rect x="2" y="3" width="6" height="18" rx="1"></rect>
                                 <rect x="16" y="3" width="6" height="18" rx="1"></rect>
                                 <path d="M8 12h8"></path>
                             </svg>
-                            Merge PDF
+                            <span>Gabungkan Sekarang</span>
                         </button>
                     </div>
-                    
-                    <div class="result-section" id="merge-result" style="display: none;"></div>
+
+                    <div class="result-section" id="merge-result" style="display: none;" aria-live="polite"></div>
                 </div>
 
                 <!-- Split Panel -->
-                <div class="tool-panel glass" id="split-panel" style="display: none;">
+                <div class="tool-panel" id="split-panel" style="display: none;">
                     <div class="panel-header">
-                        <button class="back-btn" onclick="closePanel()">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <button class="back-btn" onclick="navigateTo(''); return false;" aria-label="Kembali ke Beranda">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M19 12H5"></path>
                                 <path d="M12 19l-7-7 7-7"></path>
                             </svg>
-                            Kembali
+                            <span>Beranda</span>
                         </button>
-                        <h2>Split PDF</h2>
-                    </div>
-                    
-                    <div class="upload-zone" id="split-upload-zone">
-                        <div class="upload-content">
-                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="17 8 12 3 7 8"></polyline>
-                                <line x1="12" y1="3" x2="12" y2="15"></line>
-                            </svg>
-                            <p>Drag & drop file PDF di sini</p>
-                            <span>atau</span>
-                            <label class="btn btn-primary">
-                                Pilih File
-                                <input type="file" id="split-file-input" accept=".pdf" hidden>
-                            </label>
+                        <div class="panel-title-group">
+                            <h2>Pisahkan PDF</h2>
+                            <p class="panel-desc">Pilih halaman yang ingin diekstrak menjadi dokumen terpisah</p>
                         </div>
                     </div>
-                    
+
+                    <div class="upload-zone" id="split-upload-zone" tabindex="0" role="button" aria-label="Area unggah berkas PDF untuk dipisahkan">
+                        <div class="upload-content">
+                            <div class="upload-icon-circle">
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="17 8 12 3 7 8"></polyline>
+                                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                                </svg>
+                            </div>
+                            <p class="upload-main-text">Tarik & lepaskan berkas PDF ke sini</p>
+                            <span class="upload-or">atau</span>
+                            <label class="btn btn-primary" for="split-file-input">
+                                <span>Pilih Berkas PDF</span>
+                                <input type="file" id="split-file-input" accept=".pdf" class="visually-hidden">
+                            </label>
+                            <p class="upload-hint">Format PDF &bull; Maksimal 50MB</p>
+                        </div>
+                    </div>
+
                     <div class="split-options" id="split-options" style="display: none;">
                         <div class="pdf-info" id="split-pdf-info"></div>
-                        
-                        <h4>Preview Halaman <span class="hint">(Klik untuk memilih)</span></h4>
+
+                        <div class="section-subheading">
+                            <h4>Pratinjau Halaman</h4>
+                            <span class="hint">Klik halaman untuk memilih atau batalkan pilihan</span>
+                        </div>
                         <div class="page-preview-grid" id="split-page-preview"></div>
-                        
-                        <div class="option-group">
+
+                        <div class="option-group" role="radiogroup" aria-label="Mode Pemisahan Halaman">
                             <label class="radio-option">
                                 <input type="radio" name="split-mode" value="all" checked>
-                                <span class="radio-label">Ekstrak semua halaman</span>
+                                <span class="radio-label">Ekstrak semua halaman menjadi berkas individual</span>
                             </label>
                             <label class="radio-option">
                                 <input type="radio" name="split-mode" value="range">
-                                <span class="radio-label">Rentang halaman kustom</span>
+                                <span class="radio-label">Rentang halaman kustom (misal: 1-3, 5, 8-10)</span>
                             </label>
                             <label class="radio-option">
                                 <input type="radio" name="split-mode" value="selected">
-                                <span class="radio-label">Halaman yang dipilih</span>
+                                <span class="radio-label">Hanya halaman yang dipilih dari pratinjau di atas</span>
                             </label>
                         </div>
-                        
+
                         <div class="range-input" id="range-input" style="display: none;">
-                            <label>Masukkan rentang (contoh: 1-5, 10, 15-20)</label>
-                            <input type="text" id="page-ranges" placeholder="1-5, 10, 15-20" class="input-field">
+                            <label for="page-ranges">Masukkan format rentang halaman:</label>
+                            <input type="text" id="page-ranges" placeholder="Contoh: 1-5, 8, 11-14" class="input-field" autocomplete="off">
                         </div>
-                        
+
                         <div class="selected-pages-info" id="selected-pages-info" style="display: none;">
-                            <span>Halaman dipilih: </span><strong id="selected-count">0</strong>
+                            <span>Jumlah halaman yang dipilih: </span><strong id="selected-count">0</strong>
                         </div>
                     </div>
-                    
+
                     <div class="action-bar" id="split-action-bar" style="display: none;">
                         <button class="btn btn-primary btn-lg" onclick="processSplit()">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <rect x="2" y="3" width="8" height="18" rx="1"></rect>
                                 <rect x="14" y="3" width="8" height="18" rx="1"></rect>
                             </svg>
-                            Split PDF
+                            <span>Pisahkan Dokumen</span>
                         </button>
                     </div>
-                    
-                    <div class="result-section" id="split-result" style="display: none;"></div>
+
+                    <div class="result-section" id="split-result" style="display: none;" aria-live="polite"></div>
                 </div>
 
                 <!-- Compress Panel -->
-                <div class="tool-panel glass" id="compress-panel" style="display: none;">
+                <div class="tool-panel" id="compress-panel" style="display: none;">
                     <div class="panel-header">
-                        <button class="back-btn" onclick="closePanel()">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <button class="back-btn" onclick="navigateTo(''); return false;" aria-label="Kembali ke Beranda">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M19 12H5"></path>
                                 <path d="M12 19l-7-7 7-7"></path>
                             </svg>
-                            Kembali
+                            <span>Beranda</span>
                         </button>
-                        <h2>Compress PDF</h2>
-                    </div>
-                    
-                    <div class="upload-zone" id="compress-upload-zone">
-                        <div class="upload-content">
-                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="17 8 12 3 7 8"></polyline>
-                                <line x1="12" y1="3" x2="12" y2="15"></line>
-                            </svg>
-                            <p>Drag & drop file PDF di sini</p>
-                            <span>atau</span>
-                            <label class="btn btn-primary">
-                                Pilih File
-                                <input type="file" id="compress-file-input" accept=".pdf" hidden>
-                            </label>
+                        <div class="panel-title-group">
+                            <h2>Kompres PDF</h2>
+                            <p class="panel-desc">Kecilkan ukuran berkas dokumen agar mudah dibagikan</p>
                         </div>
                     </div>
-                    
+
+                    <div class="upload-zone" id="compress-upload-zone" tabindex="0" role="button" aria-label="Area unggah berkas PDF untuk dikompres">
+                        <div class="upload-content">
+                            <div class="upload-icon-circle">
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="17 8 12 3 7 8"></polyline>
+                                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                                </svg>
+                            </div>
+                            <p class="upload-main-text">Tarik & lepaskan berkas PDF ke sini</p>
+                            <span class="upload-or">atau</span>
+                            <label class="btn btn-primary" for="compress-file-input">
+                                <span>Pilih Berkas PDF</span>
+                                <input type="file" id="compress-file-input" accept=".pdf" class="visually-hidden">
+                            </label>
+                            <p class="upload-hint">Format PDF &bull; Maksimal 50MB</p>
+                        </div>
+                    </div>
+
                     <div class="compress-options" id="compress-options" style="display: none;">
                         <div class="pdf-info" id="compress-pdf-info"></div>
-                        
-                        <h4>Mode Kompresi</h4>
-                        <div class="compress-mode-toggle">
+
+                        <div class="compress-mode-toggle" role="radiogroup" aria-label="Mode Kompresi">
                             <label class="radio-option">
                                 <input type="radio" name="compress-mode" value="level" checked onchange="toggleCompressMode()">
-                                <span class="radio-label">Pilih Level</span>
+                                <span class="radio-label">Pilih Level Kompresi</span>
                             </label>
                             <label class="radio-option">
                                 <input type="radio" name="compress-mode" value="target" onchange="toggleCompressMode()">
-                                <span class="radio-label">Target Ukuran</span>
+                                <span class="radio-label">Tentukan Target Ukuran</span>
                             </label>
                         </div>
-                        
+
                         <div id="compress-level-section">
-                            <h4>Pilih Level Kompresi</h4>
-                            <div class="compression-levels">
+                            <div class="compression-levels" role="radiogroup" aria-label="Pilihan Level Kompresi">
                                 <label class="level-option">
                                     <input type="radio" name="compress-level" value="low">
-                                    <div class="level-card glass">
-                                        <span class="level-name">Low</span>
-                                        <span class="level-desc">Kompresi ringan, kualitas tinggi</span>
+                                    <div class="level-card">
+                                        <span class="level-name">Ringan (Low)</span>
+                                        <span class="level-desc">Ukuran berkas turun sedikit, ketajaman teks & gambar maksimal</span>
                                     </div>
                                 </label>
                                 <label class="level-option">
                                     <input type="radio" name="compress-level" value="recommended" checked>
-                                    <div class="level-card glass selected">
-                                        <span class="level-name">Recommended</span>
-                                        <span class="level-desc">Keseimbangan ukuran & kualitas</span>
+                                    <div class="level-card selected">
                                         <span class="level-badge">Direkomendasikan</span>
+                                        <span class="level-name">Standar (Recommended)</span>
+                                        <span class="level-desc">Keseimbangan terbaik antara ukuran berkas dan kejernihan</span>
                                     </div>
                                 </label>
                                 <label class="level-option">
                                     <input type="radio" name="compress-level" value="extreme">
-                                    <div class="level-card glass">
-                                        <span class="level-name">Extreme</span>
-                                        <span class="level-desc">Kompresi maksimal</span>
+                                    <div class="level-card">
+                                        <span class="level-name">Maksimal (Extreme)</span>
+                                        <span class="level-desc">Kompresi tinggi untuk berkas sekecil mungkin</span>
                                     </div>
                                 </label>
                             </div>
                         </div>
-                        
+
                         <div id="compress-target-section" style="display: none;">
-                            <h4>Target Ukuran Output</h4>
                             <div class="target-size-input">
+                                <label for="target-size-value" class="target-size-label">Target ukuran yang diinginkan:</label>
                                 <div class="target-size-row">
-                                    <input type="number" id="target-size-value" min="0.1" step="0.1" placeholder="1.0">
-                                    <select id="target-size-unit">
+                                    <input type="number" id="target-size-value" min="0.1" step="0.1" placeholder="1.0" class="input-field">
+                                    <select id="target-size-unit" class="select-field" aria-label="Satuan target ukuran">
                                         <option value="mb">MB</option>
                                         <option value="kb">KB</option>
-                                        <option value="percent">% dari asli</option>
+                                        <option value="percent">% dari ukuran asli</option>
                                     </select>
                                 </div>
-                                <p class="target-size-hint" id="target-size-hint">Ukuran asli: <span id="original-size-display">-</span></p>
+                                <p class="target-size-hint" id="target-size-hint">Ukuran asli berkas: <span id="original-size-display">-</span></p>
                                 <p class="target-size-warning" id="target-size-warning" style="display: none;">
-                                    ⚠️ Target terlalu kecil mungkin menghasilkan kualitas rendah
+                                    ⚠️ Target ukuran terlalu kecil dapat mengurangi keterbacaan teks halus pada gambar.
                                 </p>
                             </div>
                         </div>
                     </div>
-                    
+
                     <div class="action-bar" id="compress-action-bar" style="display: none;">
                         <button class="btn btn-primary btn-lg" onclick="processCompress()">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M12 3v12"></path>
                                 <path d="M8 11l4 4 4-4"></path>
                             </svg>
-                            Compress PDF
+                            <span>Kompres Sekarang</span>
                         </button>
                     </div>
-                    
-                    <div class="result-section" id="compress-result" style="display: none;"></div>
+
+                    <div class="result-section" id="compress-result" style="display: none;" aria-live="polite"></div>
                 </div>
 
                 <!-- PDF to JPG Panel -->
-                <div class="tool-panel glass" id="pdf-to-jpg-panel" style="display: none;">
+                <div class="tool-panel" id="pdf-to-jpg-panel" style="display: none;">
                     <div class="panel-header">
-                        <button class="back-btn" onclick="closePanel()">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <button class="back-btn" onclick="navigateTo(''); return false;" aria-label="Kembali ke Beranda">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M19 12H5"></path>
                                 <path d="M12 19l-7-7 7-7"></path>
                             </svg>
-                            Kembali
+                            <span>Beranda</span>
                         </button>
-                        <h2>PDF ke JPG</h2>
-                    </div>
-                    
-                    <div class="upload-zone" id="pdf-to-jpg-upload-zone">
-                        <div class="upload-content">
-                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="17 8 12 3 7 8"></polyline>
-                                <line x1="12" y1="3" x2="12" y2="15"></line>
-                            </svg>
-                            <p>Drag & drop file PDF di sini</p>
-                            <span>atau</span>
-                            <label class="btn btn-primary">
-                                Pilih File
-                                <input type="file" id="pdf-to-jpg-file-input" accept=".pdf" hidden>
-                            </label>
+                        <div class="panel-title-group">
+                            <h2>PDF ke JPG</h2>
+                            <p class="panel-desc">Konversi lembaran halaman PDF menjadi format gambar JPG</p>
                         </div>
                     </div>
-                    
+
+                    <div class="upload-zone" id="pdf-to-jpg-upload-zone" tabindex="0" role="button" aria-label="Area unggah berkas PDF untuk dikonversi ke gambar">
+                        <div class="upload-content">
+                            <div class="upload-icon-circle">
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="17 8 12 3 7 8"></polyline>
+                                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                                </svg>
+                            </div>
+                            <p class="upload-main-text">Tarik & lepaskan berkas PDF ke sini</p>
+                            <span class="upload-or">atau</span>
+                            <label class="btn btn-primary" for="pdf-to-jpg-file-input">
+                                <span>Pilih Berkas PDF</span>
+                                <input type="file" id="pdf-to-jpg-file-input" accept=".pdf" class="visually-hidden">
+                            </label>
+                            <p class="upload-hint">Format PDF &bull; Maksimal 50MB</p>
+                        </div>
+                    </div>
+
                     <div class="jpg-options" id="jpg-options" style="display: none;">
                         <div class="pdf-info" id="pdf-to-jpg-info"></div>
-                        
-                        <h4>Kualitas Output</h4>
-                        <div class="quality-options">
+
+                        <div class="section-subheading">
+                            <h4>Kualitas Gambar Output</h4>
+                        </div>
+                        <div class="quality-options" role="radiogroup" aria-label="Kualitas Konversi Gambar">
                             <label class="radio-option">
                                 <input type="radio" name="jpg-quality" value="high" checked>
-                                <span class="radio-label">Tinggi (95%)</span>
+                                <span class="radio-label">Tinggi (95% — Detail maksimal)</span>
                             </label>
                             <label class="radio-option">
                                 <input type="radio" name="jpg-quality" value="medium">
-                                <span class="radio-label">Sedang (80%)</span>
+                                <span class="radio-label">Sedang (80% — Keseimbangan optimal)</span>
                             </label>
                             <label class="radio-option">
                                 <input type="radio" name="jpg-quality" value="low">
-                                <span class="radio-label">Rendah (60%)</span>
+                                <span class="radio-label">Ringan (60% — Ukuran berkas hemat)</span>
                             </label>
                         </div>
                     </div>
-                    
+
                     <div class="action-bar" id="pdf-to-jpg-action-bar" style="display: none;">
                         <button class="btn btn-primary btn-lg" onclick="processPdfToJpg()">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <rect x="3" y="3" width="18" height="18" rx="2"></rect>
                                 <circle cx="8.5" cy="8.5" r="1.5"></circle>
                             </svg>
-                            Convert ke JPG
+                            <span>Konversi ke JPG</span>
                         </button>
                     </div>
-                    
-                    <div class="result-section" id="pdf-to-jpg-result" style="display: none;"></div>
+
+                    <div class="result-section" id="pdf-to-jpg-result" style="display: none;" aria-live="polite"></div>
                 </div>
 
                 <!-- JPG to PDF Panel -->
-                <div class="tool-panel glass" id="jpg-to-pdf-panel" style="display: none;">
+                <div class="tool-panel" id="jpg-to-pdf-panel" style="display: none;">
                     <div class="panel-header">
-                        <button class="back-btn" onclick="closePanel()">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <button class="back-btn" onclick="navigateTo(''); return false;" aria-label="Kembali ke Beranda">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M19 12H5"></path>
                                 <path d="M12 19l-7-7 7-7"></path>
                             </svg>
-                            Kembali
+                            <span>Beranda</span>
                         </button>
-                        <h2>JPG ke PDF</h2>
-                    </div>
-                    
-                    <div class="upload-zone" id="jpg-to-pdf-upload-zone">
-                        <div class="upload-content">
-                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="17 8 12 3 7 8"></polyline>
-                                <line x1="12" y1="3" x2="12" y2="15"></line>
-                            </svg>
-                            <p>Drag & drop gambar JPG/PNG di sini</p>
-                            <span>atau</span>
-                            <label class="btn btn-primary">
-                                Pilih Gambar
-                                <input type="file" id="jpg-to-pdf-file-input" multiple accept=".jpg,.jpeg,.png" hidden>
-                            </label>
+                        <div class="panel-title-group">
+                            <h2>JPG ke PDF</h2>
+                            <p class="panel-desc">Gabungkan koleksi gambar menjadi dokumen PDF terstruktur</p>
                         </div>
                     </div>
-                    
-                    <div class="file-list image-list" id="jpg-to-pdf-file-list"></div>
-                    
+
+                    <div class="upload-zone" id="jpg-to-pdf-upload-zone" tabindex="0" role="button" aria-label="Area unggah gambar untuk dijadikan PDF">
+                        <div class="upload-content">
+                            <div class="upload-icon-circle">
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="17 8 12 3 7 8"></polyline>
+                                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                                </svg>
+                            </div>
+                            <p class="upload-main-text">Tarik & lepaskan gambar JPG atau PNG ke sini</p>
+                            <span class="upload-or">atau</span>
+                            <label class="btn btn-primary" for="jpg-to-pdf-file-input">
+                                <span>Pilih Gambar</span>
+                                <input type="file" id="jpg-to-pdf-file-input" multiple accept=".jpg,.jpeg,.png" class="visually-hidden">
+                            </label>
+                            <p class="upload-hint">Format JPG &bull; PNG &bull; Maksimal 50 berkas</p>
+                        </div>
+                    </div>
+
+                    <div class="file-list image-list" id="jpg-to-pdf-file-list" aria-live="polite"></div>
+
                     <div class="jpg-to-pdf-options" id="jpg-to-pdf-options" style="display: none;">
-                        <h4>Ukuran Kertas</h4>
-                        <div class="paper-size-options">
+                        <div class="section-subheading">
+                            <h4>Ukuran Kertas PDF</h4>
+                        </div>
+                        <div class="paper-size-options" role="radiogroup" aria-label="Pilihan Ukuran Kertas">
                             <label class="radio-option">
                                 <input type="radio" name="paper-size" value="original" checked>
-                                <span class="radio-label">Ukuran Asli Gambar</span>
+                                <span class="radio-label">Sesuai Ukuran Asli Gambar</span>
                             </label>
                             <label class="radio-option">
                                 <input type="radio" name="paper-size" value="a4">
-                                <span class="radio-label">A4 (210 x 297 mm)</span>
+                                <span class="radio-label">A4 (210 &times; 297 mm)</span>
                             </label>
                             <label class="radio-option">
                                 <input type="radio" name="paper-size" value="letter">
-                                <span class="radio-label">Letter (8.5 x 11 in)</span>
+                                <span class="radio-label">Letter (8.5 &times; 11 in)</span>
                             </label>
                             <label class="radio-option">
                                 <input type="radio" name="paper-size" value="legal">
-                                <span class="radio-label">Legal (8.5 x 14 in)</span>
+                                <span class="radio-label">Legal (8.5 &times; 14 in)</span>
                             </label>
                             <label class="radio-option">
                                 <input type="radio" name="paper-size" value="a3">
-                                <span class="radio-label">A3 (297 x 420 mm)</span>
+                                <span class="radio-label">A3 (297 &times; 420 mm)</span>
                             </label>
                             <label class="radio-option">
                                 <input type="radio" name="paper-size" value="a5">
-                                <span class="radio-label">A5 (148 x 210 mm)</span>
+                                <span class="radio-label">A5 (148 &times; 210 mm)</span>
                             </label>
                         </div>
-                        
-                        <h4 style="margin-top: 1rem;">Orientasi</h4>
-                        <div class="orientation-options">
+
+                        <div class="section-subheading" style="margin-top: 1.5rem;">
+                            <h4>Orientasi Halaman</h4>
+                        </div>
+                        <div class="orientation-options" role="radiogroup" aria-label="Pilihan Orientasi">
                             <label class="radio-option">
                                 <input type="radio" name="paper-orientation" value="auto" checked>
-                                <span class="radio-label">Otomatis</span>
+                                <span class="radio-label">Otomatis (Ikuti rasio gambar)</span>
                             </label>
                             <label class="radio-option">
                                 <input type="radio" name="paper-orientation" value="portrait">
-                                <span class="radio-label">Portrait</span>
+                                <span class="radio-label">Potret (Tegak)</span>
                             </label>
                             <label class="radio-option">
                                 <input type="radio" name="paper-orientation" value="landscape">
-                                <span class="radio-label">Landscape</span>
+                                <span class="radio-label">Lanskap (Melebar)</span>
                             </label>
                         </div>
                     </div>
-                    
+
                     <div class="action-bar" id="jpg-to-pdf-action-bar" style="display: none;">
                         <button class="btn btn-primary btn-lg" onclick="processJpgToPdf()">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                                 <polyline points="14 2 14 8 20 8"></polyline>
                             </svg>
-                            Convert ke PDF
+                            <span>Buat Dokumen PDF</span>
                         </button>
                     </div>
-                    
-                    <div class="result-section" id="jpg-to-pdf-result" style="display: none;"></div>
+
+                    <div class="result-section" id="jpg-to-pdf-result" style="display: none;" aria-live="polite"></div>
                 </div>
 
                 <!-- Organize Panel -->
-                <div class="tool-panel glass" id="organize-panel" style="display: none;">
+                <div class="tool-panel" id="organize-panel" style="display: none;">
                     <div class="panel-header">
-                        <button class="back-btn" onclick="closePanel()">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <button class="back-btn" onclick="navigateTo(''); return false;" aria-label="Kembali ke Beranda">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M19 12H5"></path>
                                 <path d="M12 19l-7-7 7-7"></path>
                             </svg>
-                            Kembali
+                            <span>Beranda</span>
                         </button>
-                        <h2>Organize PDF</h2>
-                    </div>
-                    
-                    <div class="upload-zone" id="organize-upload-zone">
-                        <div class="upload-content">
-                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="17 8 12 3 7 8"></polyline>
-                                <line x1="12" y1="3" x2="12" y2="15"></line>
-                            </svg>
-                            <p>Drag & drop file PDF di sini</p>
-                            <span>atau</span>
-                            <label class="btn btn-primary">
-                                Pilih File
-                                <input type="file" id="organize-file-input" accept=".pdf" hidden>
-                            </label>
+                        <div class="panel-title-group">
+                            <h2>Atur Halaman PDF</h2>
+                            <p class="panel-desc">Putar orientasi, hapus halaman tertentu, dan susun ulang posisi halaman</p>
                         </div>
                     </div>
-                    
+
+                    <div class="upload-zone" id="organize-upload-zone" tabindex="0" role="button" aria-label="Area unggah berkas PDF untuk diatur halamannya">
+                        <div class="upload-content">
+                            <div class="upload-icon-circle">
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="17 8 12 3 7 8"></polyline>
+                                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                                </svg>
+                            </div>
+                            <p class="upload-main-text">Tarik & lepaskan berkas PDF ke sini</p>
+                            <span class="upload-or">atau</span>
+                            <label class="btn btn-primary" for="organize-file-input">
+                                <span>Pilih Berkas PDF</span>
+                                <input type="file" id="organize-file-input" accept=".pdf" class="visually-hidden">
+                            </label>
+                            <p class="upload-hint">Format PDF &bull; Maksimal 50MB</p>
+                        </div>
+                    </div>
+
                     <div class="organize-workspace" id="organize-workspace" style="display: none;">
                         <div class="organize-toolbar">
-                            <span class="toolbar-hint">Drag halaman untuk menyusun ulang • Drop PDF untuk insert</span>
+                            <span class="toolbar-hint">Gunakan tombol panah (&larr; / &rarr;) atau tarik kartu untuk menyusun ulang &bull; Klik putar (&circlearrowright;) atau hapus (&times;)</span>
                             <div class="toolbar-actions">
-                                <label class="btn btn-secondary btn-sm">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <label class="btn btn-secondary btn-sm" for="organize-insert-input">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                         <path d="M12 5v14"></path>
                                         <path d="M5 12h14"></path>
                                     </svg>
-                                    Insert PDF
-                                    <input type="file" id="organize-insert-input" accept=".pdf" hidden>
+                                    <span>Sisipkan PDF Lain</span>
+                                    <input type="file" id="organize-insert-input" accept=".pdf" class="visually-hidden">
                                 </label>
                             </div>
                         </div>
                         <div class="page-grid-dropzone" id="page-grid-dropzone">
                             <div class="page-grid" id="page-grid"></div>
                             <div class="dropzone-overlay" id="dropzone-overlay">
-                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M12 5v14"></path>
                                     <path d="M5 12h14"></path>
                                 </svg>
-                                <p>Drop PDF untuk menambahkan halaman</p>
+                                <p>Lepaskan PDF untuk menyisipkan halaman baru</p>
                             </div>
                         </div>
                     </div>
-                    
+
                     <div class="action-bar" id="organize-action-bar" style="display: none;">
                         <button class="btn btn-primary btn-lg" onclick="processOrganize()">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
                                 <polyline points="17 21 17 13 7 13 7 21"></polyline>
                             </svg>
-                            Simpan Perubahan
+                            <span>Simpan Perubahan Dokumen</span>
                         </button>
                     </div>
-                    
-                    <div class="result-section" id="organize-result" style="display: none;"></div>
+
+                    <div class="result-section" id="organize-result" style="display: none;" aria-live="polite"></div>
                 </div>
 
                 <!-- About Panel -->
-                <div class="tool-panel glass" id="about-panel" style="display: none;">
+                <div class="tool-panel" id="about-panel" style="display: none;">
                     <div class="panel-header">
-                        <button class="back-btn" onclick="closePanel()">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <button class="back-btn" onclick="navigateTo(''); return false;" aria-label="Kembali ke Beranda">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M19 12H5"></path>
                                 <path d="M12 19l-7-7 7-7"></path>
                             </svg>
-                            Kembali
+                            <span>Beranda</span>
                         </button>
-                        <h2>Tentang</h2>
+                        <div class="panel-title-group">
+                            <h2>Tentang Aplikasi</h2>
+                            <p class="panel-desc">Informasi utilitas, privasi, keamanan, dan pengembang</p>
+                        </div>
                     </div>
-                    
+
                     <div class="about-content">
                         <div class="about-hero">
                             <div class="about-avatar">
-                                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                                     <circle cx="12" cy="7" r="4"></circle>
                                 </svg>
                             </div>
                             <h3>Farzani Ryuga Benedict Alcabiades</h3>
-                            <p class="about-role">Creator & Developer</p>
+                            <p class="about-role">Creator &bull; Software Developer</p>
                         </div>
-                        
+
                         <div class="about-section">
-                            <h4>Tentang Aplikasi</h4>
-                            <p>Secure PDF Utility Suite adalah aplikasi pemrosesan PDF self-hosted yang mengutamakan keamanan dan privasi. Semua file diproses secara lokal di server Anda sendiri, tanpa pernah dikirim ke pihak ketiga.</p>
+                            <h4>Filosofi & Privasi Dokumen</h4>
+                            <p><strong>Secure PDF Utility Suite</strong> dibangun dengan prinsip nol kompromi terhadap privasi data pengguna. Tidak seperti layanan konversi daring publik yang menyimpan data Anda di cloud pihak ketiga, suite ini beroperasi secara 100% mandiri (self-hosted). Semua operasi pemrosesan berkas terjadi di server lokal Anda sendiri.</p>
                         </div>
-                        
+
                         <div class="about-section">
-                            <h4>Fitur Utama</h4>
+                            <h4>Lapisan Keamanan & Proteksi</h4>
                             <ul class="about-features">
-                                <li><strong>Merge PDF</strong> - Gabungkan beberapa PDF menjadi satu</li>
-                                <li><strong>Split PDF</strong> - Pisahkan PDF berdasarkan halaman</li>
-                                <li><strong>Compress PDF</strong> - Kompres ukuran file PDF</li>
-                                <li><strong>PDF ke JPG</strong> - Konversi PDF ke gambar</li>
-                                <li><strong>JPG ke PDF</strong> - Gabungkan gambar menjadi PDF</li>
-                                <li><strong>Organize PDF</strong> - Atur ulang, putar, hapus halaman</li>
+                                <li><strong>Auto-Delete Berkala</strong> &mdash; Berkas masukan dan luaran otomatis dihapus permanen oleh daemon pembersih setiap 30 menit.</li>
+                                <li><strong>Validasi Magic Bytes</strong> &mdash; Berkas yang diunggah diverifikasi tanda tangan binary aslinya, mencegah injeksi berkas berbahaya.</li>
+                                <li><strong>Proteksi Path Traversal & UUID</strong> &mdash; Seluruh berkas disimpan dengan identifikasi acak kriptografis (UUID v4) untuk mencegah manipulasi direktori.</li>
+                                <li><strong>Rate Limiting & Proxy Aware</strong> &mdash; Perlindungan dari lalu lintas berlebih dan serangan brute-force via reverse proxy Nginx.</li>
                             </ul>
                         </div>
-                        
+
                         <div class="about-section">
-                            <h4>Keamanan</h4>
-                            <ul class="about-features">
-                                <li>100% Self-Hosted - Data tidak pernah meninggalkan server Anda</li>
-                                <li>Auto-Delete - File dihapus otomatis setelah 30 menit</li>
-                                <li>Validasi File - Magic bytes validation untuk keamanan</li>
-                                <li>Rate Limiting - Perlindungan dari abuse</li>
-                            </ul>
-                        </div>
-                        
-                        <div class="about-section">
-                            <h4>Teknologi</h4>
+                            <h4>Teknologi Utama</h4>
                             <div class="tech-stack">
-                                <span class="tech-badge">Node.js</span>
-                                <span class="tech-badge">Express</span>
+                                <span class="tech-badge">Node.js 18+</span>
+                                <span class="tech-badge">Express.js</span>
                                 <span class="tech-badge">PDF-lib</span>
                                 <span class="tech-badge">PDF.js</span>
-                                <span class="tech-badge">Sharp</span>
+                                <span class="tech-badge">Nginx TLS</span>
+                                <span class="tech-badge">Docker Alpine</span>
                             </div>
                         </div>
-                        
+
                         <div class="about-footer">
-                            <p>© 2024 Secure PDF Utility Suite</p>
-                            <p>Made with ❤️ by Farzani Ryuga Benedict Alcabiades</p>
+                            <p>&copy; 2024&ndash;2026 Secure PDF Utility Suite. Lisensi Open Source MIT.</p>
+                            <p>Dirancang & dikembangkan dengan integritas untuk privasi dokumen.</p>
                         </div>
                     </div>
                 </div>
@@ -689,26 +840,33 @@
         </section>
     </main>
 
-    <!-- Loading Overlay -->
-    <div class="loading-overlay" id="loading-overlay">
-        <div class="loading-content glass">
-            <div class="spinner"></div>
-            <p id="loading-text">Memproses...</p>
+    <!-- Global Loading Overlay -->
+    <div class="loading-overlay" id="loading-overlay" role="dialog" aria-modal="true" aria-labelledby="loading-text">
+        <div class="loading-content">
+            <div class="spinner" aria-hidden="true"></div>
+            <p id="loading-text">Sedang memproses dokumen...</p>
+            <p class="loading-subtext">Mohon tunggu, proses dilakukan secara lokal di server.</p>
         </div>
     </div>
 
-    <!-- Toast Notification -->
-    <div class="toast-container" id="toast-container"></div>
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container" aria-live="polite"></div>
 
-    <footer class="footer glass">
-        <div class="container">
-            <p>&copy; 2024 Secure PDF Utility Suite. 100% Self-Hosted & Private.</p>
-            <p class="security-note">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                </svg>
-                File dihapus otomatis setelah 30 menit
-            </p>
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container footer-container">
+            <div class="footer-left">
+                <span class="footer-title">Secure PDF Suite</span>
+                <span class="footer-copy">&copy; 2024&ndash;2026 100% Self-Hosted &bull; Hak Cipta Terpelihara</span>
+            </div>
+            <div class="footer-right">
+                <div class="security-note">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                    </svg>
+                    <span>Berkas kedaluwarsa & dihapus otomatis tiap 30 menit</span>
+                </div>
+            </div>
         </div>
     </footer>
 
