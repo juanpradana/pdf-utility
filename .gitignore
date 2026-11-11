@@ -28,3 +28,9 @@ Thumbs.db
 # Build
 dist/
 build/
+
+# TLS certificates
+nginx/ssl/*.crt
+nginx/ssl/*.key
+nginx/ssl/*.pem
+

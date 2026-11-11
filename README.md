@@ -11,7 +11,7 @@ Aplikasi pemrosesan PDF **self-hosted** yang aman, cepat, dan 100% sadar privasi
 
 ## ✨ Demo
 
-🌐 **Live Demo:** [https://pdf.farzani.space](https://pdf.farzani.space)
+🌐 **Live Demo:** [https://pdf.farzani.my.id](https://pdf.farzani.my.id)
 
 ## 🎯 Fitur
 
@@ -75,10 +75,14 @@ npm run dev
 |-------|------------|
 | **Backend** | Node.js, Express |
 | **PDF Processing** | pdf-lib |
-| **Image Processing** | sharp |
 | **PDF Rendering** | PDF.js (client-side) |
 | **Security** | helmet, express-rate-limit, cors |
 | **Frontend** | Vanilla JS, Glassmorphism UI |
+| **Reverse Proxy** | Nginx (bundled in Docker Compose) |
+
+> Tidak ada native dependency (`sharp`, `poppler`, dll) — semua operasi PDF
+> ditangani `pdf-lib` di server dan Canvas/PDF.js di browser, sehingga image
+> Docker berbasis Alpine dan tetap ringan.
 
 ## 📁 Project Structure
 
@@ -87,10 +91,13 @@ secure-pdf-utility-suite/
 ├── server.js              # Express server & API endpoints
 ├── package.json           # Dependencies & scripts
 ├── Dockerfile             # Production image (multi-stage, non-root)
-├── docker-compose.yml     # Deployment stack
+├── docker-compose.yml     # Deployment stack (app + nginx proxy)
 ├── .dockerignore          # Build context exclusions
 ├── .env.example           # Configuration template
 ├── README.md              # Documentation
+├── nginx/
+│   ├── nginx.conf         # Reverse proxy + TLS config
+│   └── generate-ssl.sh    # Self-signed certificate generator
 ├── public/
 │   ├── index.html         # Frontend HTML
 │   ├── styles.css         # Glassmorphism CSS styles
@@ -101,23 +108,34 @@ secure-pdf-utility-suite/
 
 ## 🐳 Docker Deployment
 
-Cara tercepat menjalankan di server: Docker Compose.
+Docker Compose menjalankan **dua container** pada satu network internal:
+
+| Service | Image | Peran |
+|---------|-------|-------|
+| `app` | build lokal (`pdf-utility:latest`) | Node/Express, tidak di-expose ke host |
+| `proxy` | `nginx:1.27-alpine` | Terminasi TLS, satu-satunya port publik (80, 443) |
 
 ```bash
 # 1. Siapkan konfigurasi
 cp .env.example .env
 nano .env                 # sesuaikan bila perlu
 
-# 2. Build dan jalankan
+# 2. Buat sertifikat self-signed untuk origin (sekali saja)
+chmod +x nginx/generate-ssl.sh
+./nginx/generate-ssl.sh pdf.farzani.my.id
+
+# 3. Build dan jalankan
 docker compose up -d --build
 
-# 3. Cek status dan log
+# 4. Cek status dan log
 docker compose ps
 docker compose logs -f
 ```
 
-Aplikasi akan tersedia di `http://<server>:3001`. Port di-bind ke `127.0.0.1`
-saja — akses publik lewat reverse proxy (lihat di bawah).
+Aplikasi akan tersedia di `https://<domain>` — HTTP otomatis di-redirect
+(301) ke HTTPS. Proxy memakai `/api/health` untuk memastikan `app` sehat
+sebelum dianggap siap, dan `proxy_set_header X-Forwarded-*` diteruskan
+sehingga `TRUST_PROXY=true` membuat rate limit menghitung IP asli klien.
 
 Perintah lain yang sering dipakai:
 
@@ -130,6 +148,20 @@ docker compose logs -f --tail=100
 
 Data sementara disimpan pada named volume `pdf-data`, sehingga tetap ada
 meskipun container di-rebuild.
+
+### TLS
+
+`nginx/generate-ssl.sh` membuat sertifikat RSA 4096-bit yang berlaku 10 tahun
+untuk `pdf.farzani.my.id` (termasuk SAN `www`). Jika domain berada di balik
+Cloudflare, set mode SSL/TLS ke **Full (strict)** agar sertifikat origin ini
+diverifikasi. Untuk origin tanpa Cloudflare, ganti dengan Let's Encrypt:
+
+```bash
+sudo apt install -y certbot
+sudo certbot certonly --webroot -w /var/www/certbot -d pdf.farzani.my.id
+# lalu arahkan ssl_certificate/ssl_certificate_key di nginx/nginx.conf
+# ke /etc/letsencrypt/live/pdf.farzani.my.id/{fullchain,privkey}.pem
+```
 
 ## 🔧 Configuration
 
@@ -153,86 +185,19 @@ Seluruh konfigurasi lewat environment variable (lihat `.env.example`):
 | `TRUST_PROXY` | `true` | Percaya `X-Forwarded-For` (di belakang proxy) |
 | `FRONTEND_ORIGIN` | _(kosong)_ | Origin CORS tambahan; kosong = same-origin saja |
 
-### Nginx + SSL (reverse proxy)
+### Reverse Proxy & SSL
 
-Jalankan app di port `3001` (Docker) dan letakkan Nginx di depannya. Contoh
-konfigurasi untuk domain `pdf.farzani.my.id`:
+Reverse proxy sudah dibundel di `docker-compose.yml` (service `proxy`), jadi
+tidak perlu memasang Nginx di host. Konfigurasinya ada di `nginx/nginx.conf`:
+HTTP→HTTPS redirect, TLS 1.2/1.3, `client_max_body_size 100M`, timeout 300s
+untuk proses PDF besar, dan `proxy_request_buffering off` agar upload besar
+tidak menahan memori di proxy.
 
-```nginx
-# /etc/nginx/sites-available/pdf.farzani.my.id
-server {
-    listen 80;
-    server_name pdf.farzani.my.id;
+Karena `TRUST_PROXY=true`, rate limiting menghitung IP asli klien dari header
+`X-Forwarded-For`, bukan IP proxy.
 
-    client_max_body_size 100M;   # samakan/lebihkan dari MAX_FILE_SIZE_MB
-
-    location / {
-        proxy_pass http://127.0.0.1:3001;
-        proxy_http_version 1.1;
-        proxy_set_header Host              $host;
-        proxy_set_header X-Real-IP         $remote_addr;
-        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_read_timeout 300s;   # proses PDF besar butuh waktu
-    }
-}
-```
-
-Aktifkan dan reload:
-
-```bash
-sudo ln -s /etc/nginx/sites-available/pdf.farzani.my.id /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
-```
-
-Karena `TRUST_PROXY=true`, rate limiting akan menghitung IP asli klien dari
-header `X-Forwarded-For`, bukan IP proxy.
-
-### SSL
-
-Jika domain di-proxy Cloudflare, aktifkan mode **Full** dan pasang sertifikat
-self-signed di origin:
-
-```bash
-sudo mkdir -p /etc/nginx/ssl
-sudo openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
-  -keyout /etc/nginx/ssl/pdf.farzani.my.id.key \
-  -out    /etc/nginx/ssl/pdf.farzani.my.id.crt \
-  -subj   "/CN=pdf.farzani.my.id"
-```
-
-Lalu tambahkan blok HTTPS pada konfigurasi Nginx:
-
-```nginx
-server {
-    listen 443 ssl;
-    http2 on;
-    server_name pdf.farzani.my.id;
-
-    ssl_certificate     /etc/nginx/ssl/pdf.farzani.my.id.crt;
-    ssl_certificate_key /etc/nginx/ssl/pdf.farzani.my.id.key;
-    ssl_protocols       TLSv1.2 TLSv1.3;
-
-    client_max_body_size 100M;
-
-    location / {
-        proxy_pass http://127.0.0.1:3001;
-        proxy_http_version 1.1;
-        proxy_set_header Host              $host;
-        proxy_set_header X-Real-IP         $remote_addr;
-        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_read_timeout 300s;
-    }
-}
-```
-
-Untuk origin tanpa Cloudflare, gunakan Let's Encrypt dengan Certbot:
-
-```bash
-sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d pdf.farzani.my.id
-```
+Jika ingin memakai Nginx host (mis. sudah ada Nginx lain), cukup bind ulang
+`app` ke `127.0.0.1:3001` dan teruskan `X-Forwarded-*` seperti di atas.
 
 
 ## 📱 Responsive Design
@@ -262,4 +227,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - [pdf-lib](https://github.com/Hopding/pdf-lib) - PDF manipulation library
 - [PDF.js](https://mozilla.github.io/pdf.js/) - PDF rendering in browser
-- [sharp](https://sharp.pixelplumbing.com/) - High performance image processing
+- [Nginx](https://nginx.org/) - reverse proxy dan terminasi TLS di container `proxy`
