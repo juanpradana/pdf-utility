@@ -29,8 +29,10 @@ Thumbs.db
 dist/
 build/
 
-# TLS certificates
+# TLS certificates & Let's Encrypt state
 nginx/ssl/*.crt
 nginx/ssl/*.key
 nginx/ssl/*.pem
+nginx/letsencrypt/
+nginx/certbot-www/
 

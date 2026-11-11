@@ -71,6 +71,10 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./nginx/maintenance.html:/etc/nginx/maintenance/maintenance.html:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
+      # Serves ACME HTTP-01 challenges written by init-letsencrypt.sh.
+      # Certbot's own store stays out of this container: nginx only ever
+      # needs the already-installed server.crt / server.key above.
+      - ./nginx/certbot-www:/var/www/certbot:ro
 
     depends_on:
       app:

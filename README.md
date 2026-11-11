@@ -96,8 +96,13 @@ secure-pdf-utility-suite/
 ├── .env.example           # Configuration template
 ├── README.md              # Documentation
 ├── nginx/
-│   ├── nginx.conf         # Reverse proxy + TLS config
-│   └── generate-ssl.sh    # Self-signed certificate generator
+│   ├── nginx.conf          # Reverse proxy + TLS config
+│   ├── generate-ssl.sh     # Self-signed certificate generator (fallback)
+│   ├── init-letsencrypt.sh # Let's Encrypt issuance + renewal
+│   ├── maintenance.html    # 503 page for the apex / non-app hosts
+│   ├── ssl/                # server.crt + server.key (generated, git-ignored)
+│   ├── letsencrypt/        # certbot state (generated, git-ignored)
+│   └── certbot-www/        # ACME HTTP-01 webroot (git-ignored)
 ├── public/
 │   ├── index.html         # Frontend HTML
 │   ├── styles.css         # Glassmorphism CSS styles
@@ -162,25 +167,45 @@ meskipun container di-rebuild.
 
 ### TLS
 
-`nginx/generate-ssl.sh` membuat sertifikat RSA 4096-bit yang berlaku 10 tahun.
-Secara default ditandatangani untuk CN `pdf.farzani.my.id` dan SAN `www.pdf.farzani.my.id`.
-Argumen tambahan diteruskan sebagai subjectAltName, sehingga satu sertifikat bisa
-melayani app subdomain **dan** host maintenance:
+Proxy membaca sertifikat dari `nginx/ssl/server.crt` dan `server.key` — nama
+file yang netral supaya sumber sertifikat bisa ditukar tanpa mengubah
+konfigurasi.
+
+**Pilihan 1 — Let's Encrypt (disarankan untuk domain publik).**
+Digunakan untuk deployment ini karena DNS `pdf.farzani.my.id` dan
+`farzani.my.id` mengarah langsung ke server dan port 80/443 terbuka:
+
+```bash
+./nginx/init-letsencrypt.sh pdf.farzani.my.id farzani.my.id
+```
+
+Skrip ini memverifikasi port 80 lebih dulu (supaya kegagalan DNS/firewall
+langsung terlihat, bukan sebagai galat ACME), memanggil certbot lewat Docker
+— jadi **tidak perlu `sudo` atau paket certbot di host** — lalu memasang
+kembali sertifikat dan memuat ulang Nginx. Sertifikat berlaku 90 hari;
+tambahkan cron bulanan untuk pembaruan:
+
+```bash
+0 3 1 * * cd /path/to/pdf-utility && ./nginx/init-letsencrypt.sh --renew >> nginx/letsencrypt/renew.log 2>&1
+```
+
+> Hanya sertifikakan domain yang benar-benar mengarah ke server ini. Saat ini
+> `www.farzani.my.id` menunjuk ke Cloudflare, bukan IP origin, sehingga
+> sertifikat hanya untuk `pdf.farzani.my.id` dan `farzani.my.id`.
+
+**Pilihan 2 — self-signed (fallback, cocok untuk Cloudflare proxy atau
+internal).** Jalankan sekali agar proxy tetap bisa start; browser akan
+memperingatkan sampai sertifikat tepercaya menggantikannya:
 
 ```bash
 ./nginx/generate-ssl.sh pdf.farzani.my.id farzani.my.id www.farzani.my.id
 ```
 
-Jika domain berada di balik Cloudflare, set mode SSL/TLS ke **Full (strict)**
-agar sertifikat origin ini diverifikasi. Untuk origin tanpa Cloudflare, ganti
-dengan Let's Encrypt:
+Argumen pertama menjadi CN, sisanya menjadi `subjectAltName`, sehingga satu
+sertifikat meliputi app subdomain **dan** host maintenance.
 
-```bash
-sudo apt install -y certbot
-sudo certbot certonly --webroot -w /var/www/certbot -d pdf.farzani.my.id -d farzani.my.id -d www.farzani.my.id
-# lalu arahkan ssl_certificate/ssl_certificate_key di nginx/nginx.conf
-# ke /etc/letsencrypt/live/pdf.farzani.my.id/{fullchain,privkey}.pem
-```
+Jika domain berada di balik Cloudflare, set mode SSL/TLS ke **Full (strict)**
+agar sertifikat origin diverifikasi.
 
 ## 🔧 Configuration
 
