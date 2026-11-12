@@ -2963,13 +2963,33 @@ function setupGlobalDragAndDrop() {
         // Required so the browser hands us the drop instead of opening the file.
         e.preventDefault();
         if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+        // dragover repeats for the life of the drag, so re-asserting here
+        // self-heals a dragenter the counter missed on a nested element.
+        showGlobalDropOverlay();
     });
 
     document.addEventListener('dragleave', (e) => {
         if (!isFileDrag(e)) return;
+        // Leaving the document fires exactly one dragleave, while entering it
+        // fires one per nested boundary crossed — the depth counter alone can
+        // settle above zero and leave the overlay stuck. Coordinates beyond
+        // the viewport mean the pointer really did leave the window.
+        if (e.clientX <= 0 || e.clientY <= 0 ||
+            e.clientX >= window.innerWidth || e.clientY >= window.innerHeight) {
+            hideGlobalDropOverlay();
+            return;
+        }
         globalDragDepth = Math.max(0, globalDragDepth - 1);
         if (globalDragDepth === 0) hideGlobalDropOverlay();
     });
+
+    // Capture phase: this runs before any zone handler, and the upload zones
+    // stop the drop from propagating to keep from processing files twice. In
+    // the bubble phase it would never fire and the overlay would stay up.
+    document.addEventListener('drop', (e) => {
+        if (!isFileDrag(e)) return;
+        hideGlobalDropOverlay();
+    }, true);
 
     document.addEventListener('drop', async (e) => {
         if (!isFileDrag(e)) return;
@@ -3022,9 +3042,10 @@ document.addEventListener('DOMContentLoaded', () => {
     setupGlobalDragAndDrop();
     installRouteGuard();
 
-    // Esc closes the mobile menu, the way people expect on a phone.
+    // Esc closes the mobile menu and the drop overlay, the way people expect.
     document.addEventListener('keydown', (e) => {
         if (e.key !== 'Escape') return;
+        hideGlobalDropOverlay();
         const menu = document.getElementById('mobile-menu');
         const btn = document.getElementById('mobile-menu-btn');
         if (menu && menu.classList.contains('active')) {
