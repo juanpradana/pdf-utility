@@ -61,6 +61,7 @@ const state = {
     insertedPdfs: [],
     expiryTimers: new Map(),
     isProcessing: false,
+    restoredPanels: new Set(),
     sessionRestored: false
 };
 
@@ -160,8 +161,13 @@ function installRouteGuard() {
  * Called once on DOMContentLoaded and on every route change.
  */
 async function restoreSessionFiles() {
-    if (state.sessionRestored) return;
-    state.sessionRestored = true;
+    const panel = state.currentPanel;
+    if (!panel) return;
+
+    // Per-panel guard so navigating between tools restores each independently
+    if (!state.restoredPanels) state.restoredPanels = new Set();
+    if (state.restoredPanels.has(panel)) return;
+    state.restoredPanels.add(panel);
 
     try {
         const response = await fetch('/api/session-files');
@@ -169,18 +175,20 @@ async function restoreSessionFiles() {
         const { success, files } = await response.json();
         if (!success || !Array.isArray(files) || files.length === 0) return;
 
-        const panel = state.currentPanel;
-        if (!panel) return;
-
         // Filter files belonging to the current panel's tool
         const toolFiles = files.filter(f => f.tool === panel);
         if (toolFiles.length === 0) return;
 
-        showToast(`Sesi Anda dipulihkan (${toolFiles.length} berkas aktif)`);
+        // Separate uploads (inputs) from outputs (results)
+        const uploads = toolFiles.filter(f => f.role === 'upload');
+        const outputs = toolFiles.filter(f => f.role === 'output');
 
+        let restoredCount = 0;
+
+        // --- Rehydrate INPUT files (uploads) ---
         switch (panel) {
             case 'merge':
-                for (const f of toolFiles) {
+                for (const f of uploads) {
                     state.mergeFiles.push({
                         id: f.id,
                         name: f.originalName,
@@ -188,6 +196,7 @@ async function restoreSessionFiles() {
                         expiry: f.expiry
                     });
                     startExpiryTimer(f.id, f.expiry);
+                    restoredCount++;
                 }
                 renderMergeFileList();
                 if (state.mergeFiles.length >= 2) {
@@ -195,96 +204,100 @@ async function restoreSessionFiles() {
                 }
                 break;
 
-            case 'split': {
-                const f = toolFiles[0];
-                state.splitFile = { id: f.id, originalName: f.originalName, size: f.size, expiry: f.expiry };
-                document.getElementById('split-upload-zone').style.display = 'none';
-                document.getElementById('split-options').style.display = 'block';
-                document.getElementById('split-action-bar').style.display = 'flex';
+            case 'split':
+                if (uploads.length > 0) {
+                    const f = uploads[0];
+                    state.splitFile = { id: f.id, originalName: f.originalName, size: f.size, expiry: f.expiry };
+                    document.getElementById('split-upload-zone').style.display = 'none';
+                    document.getElementById('split-options').style.display = 'block';
+                    document.getElementById('split-action-bar').style.display = 'flex';
 
-                // Load PDF for preview
-                showLoading('Memuat preview halaman...');
-                const pdfUrl = `/api/pdf-file/${f.id}`;
-                state.splitPdfDoc = await pdfjsLib.getDocument(pdfUrl).promise;
-                hideLoading();
+                    showLoading('Memuat preview halaman...');
+                    const pdfUrl = `/api/pdf-file/${f.id}`;
+                    state.splitPdfDoc = await pdfjsLib.getDocument(pdfUrl).promise;
+                    hideLoading();
 
-                state.splitFile.pageCount = state.splitPdfDoc.numPages;
-                document.getElementById('split-pdf-info').innerHTML = `
-                    <div class="pdf-info-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                            <polyline points="14 2 14 8 20 8"></polyline>
-                        </svg>
-                    </div>
-                    <div class="pdf-info-details">
-                        <h4>${escapeHtml(f.originalName)}</h4>
-                        <p>${state.splitFile.pageCount} halaman • ${formatFileSize(f.size)}</p>
-                    </div>
-                `;
-                await renderSplitPagePreviews();
-                startExpiryTimer(f.id, f.expiry);
-                break;
-            }
-
-            case 'compress': {
-                const f = toolFiles[0];
-                state.compressFile = { id: f.id, originalName: f.originalName, size: f.size, expiry: f.expiry };
-                document.getElementById('compress-upload-zone').style.display = 'none';
-                document.getElementById('compress-options').style.display = 'block';
-                document.getElementById('compress-action-bar').style.display = 'flex';
-
-                document.getElementById('compress-pdf-info').innerHTML = `
-                    <div class="pdf-info-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                            <polyline points="14 2 14 8 20 8"></polyline>
-                        </svg>
-                    </div>
-                    <div class="pdf-info-details">
-                        <h4>${escapeHtml(f.originalName)}</h4>
-                        <p>Ukuran asli: ${formatFileSize(f.size)}</p>
-                    </div>
-                `;
-                document.getElementById('original-size-display').textContent = formatFileSize(f.size);
-                const defaultTargetMB = (f.size / (1024 * 1024) * 0.5).toFixed(1);
-                document.getElementById('target-size-value').value = defaultTargetMB;
-                startExpiryTimer(f.id, f.expiry);
-                break;
-            }
-
-            case 'pdf-to-jpg': {
-                const f = toolFiles[0];
-                state.pdfToJpgFile = { id: f.id, originalName: f.originalName, size: f.size, expiry: f.expiry };
-                document.getElementById('pdf-to-jpg-upload-zone').style.display = 'none';
-                document.getElementById('jpg-options').style.display = 'block';
-                document.getElementById('pdf-to-jpg-action-bar').style.display = 'flex';
-
-                document.getElementById('pdf-to-jpg-info').innerHTML = `
-                    <div class="pdf-info-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                            <polyline points="14 2 14 8 20 8"></polyline>
-                        </svg>
-                    </div>
-                    <div class="pdf-info-details">
-                        <h4>${escapeHtml(f.originalName)}</h4>
-                        <p>${f.pageCount || '?'} halaman • ${formatFileSize(f.size)}</p>
-                    </div>
-                `;
-                // Need to fetch page count if missing
-                if (!f.pageCount) {
-                    const infoResponse = await fetch(`/api/pdf-info/${f.id}`);
-                    const infoData = await infoResponse.json();
-                    state.pdfToJpgFile.pageCount = infoData.pageCount;
-                    document.querySelector('#pdf-to-jpg-info .pdf-info-details p').textContent =
-                        `${infoData.pageCount} halaman • ${formatFileSize(f.size)}`;
+                    state.splitFile.pageCount = state.splitPdfDoc.numPages;
+                    document.getElementById('split-pdf-info').innerHTML = `
+                        <div class="pdf-info-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                            </svg>
+                        </div>
+                        <div class="pdf-info-details">
+                            <h4>${escapeHtml(f.originalName)}</h4>
+                            <p>${state.splitFile.pageCount} halaman • ${formatFileSize(f.size)}</p>
+                        </div>
+                    `;
+                    await renderSplitPagePreviews();
+                    startExpiryTimer(f.id, f.expiry);
+                    restoredCount++;
                 }
-                startExpiryTimer(f.id, f.expiry);
                 break;
-            }
+
+            case 'compress':
+                if (uploads.length > 0) {
+                    const f = uploads[0];
+                    state.compressFile = { id: f.id, originalName: f.originalName, size: f.size, expiry: f.expiry };
+                    document.getElementById('compress-upload-zone').style.display = 'none';
+                    document.getElementById('compress-options').style.display = 'block';
+                    document.getElementById('compress-action-bar').style.display = 'flex';
+
+                    document.getElementById('compress-pdf-info').innerHTML = `
+                        <div class="pdf-info-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                            </svg>
+                        </div>
+                        <div class="pdf-info-details">
+                            <h4>${escapeHtml(f.originalName)}</h4>
+                            <p>Ukuran asli: ${formatFileSize(f.size)}</p>
+                        </div>
+                    `;
+                    document.getElementById('original-size-display').textContent = formatFileSize(f.size);
+                    const defaultTargetMB = (f.size / (1024 * 1024) * 0.5).toFixed(1);
+                    document.getElementById('target-size-value').value = defaultTargetMB;
+                    startExpiryTimer(f.id, f.expiry);
+                    restoredCount++;
+                }
+                break;
+
+            case 'pdf-to-jpg':
+                if (uploads.length > 0) {
+                    const f = uploads[0];
+                    state.pdfToJpgFile = { id: f.id, originalName: f.originalName, size: f.size, expiry: f.expiry };
+                    document.getElementById('pdf-to-jpg-upload-zone').style.display = 'none';
+                    document.getElementById('jpg-options').style.display = 'block';
+                    document.getElementById('pdf-to-jpg-action-bar').style.display = 'flex';
+
+                    document.getElementById('pdf-to-jpg-info').innerHTML = `
+                        <div class="pdf-info-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                            </svg>
+                        </div>
+                        <div class="pdf-info-details">
+                            <h4>${escapeHtml(f.originalName)}</h4>
+                            <p>${f.pageCount || '?'} halaman • ${formatFileSize(f.size)}</p>
+                        </div>
+                    `;
+                    if (!f.pageCount) {
+                        const infoResponse = await fetch(`/api/pdf-info/${f.id}`);
+                        const infoData = await infoResponse.json();
+                        state.pdfToJpgFile.pageCount = infoData.pageCount;
+                        document.querySelector('#pdf-to-jpg-info .pdf-info-details p').textContent =
+                            `${infoData.pageCount} halaman • ${formatFileSize(f.size)}`;
+                    }
+                    startExpiryTimer(f.id, f.expiry);
+                    restoredCount++;
+                }
+                break;
 
             case 'jpg-to-pdf':
-                for (const f of toolFiles) {
+                for (const f of uploads) {
                     state.jpgToPdfFiles.push({
                         id: f.id,
                         name: f.originalName,
@@ -292,27 +305,95 @@ async function restoreSessionFiles() {
                         expiry: f.expiry
                     });
                     startExpiryTimer(f.id, f.expiry);
+                    restoredCount++;
                 }
                 renderJpgToPdfFileList();
-                document.getElementById('jpg-to-pdf-action-bar').style.display = 'flex';
-                document.getElementById('jpg-to-pdf-options').style.display = 'block';
+                if (state.jpgToPdfFiles.length > 0) {
+                    document.getElementById('jpg-to-pdf-action-bar').style.display = 'flex';
+                    document.getElementById('jpg-to-pdf-options').style.display = 'block';
+                }
                 break;
 
-            case 'organize': {
-                const f = toolFiles[0];
-                state.organizeFile = { id: f.id, originalName: f.originalName, size: f.size, expiry: f.expiry };
-                document.getElementById('organize-upload-zone').style.display = 'none';
-                document.getElementById('organize-workspace').style.display = 'block';
+            case 'organize':
+                if (uploads.length > 0) {
+                    const f = uploads[0];
+                    state.organizeFile = { id: f.id, originalName: f.originalName, size: f.size, expiry: f.expiry };
+                    document.getElementById('organize-upload-zone').style.display = 'none';
+                    document.getElementById('organize-workspace').style.display = 'block';
 
-                showLoading('Memuat halaman...');
-                const pdfUrl = `/api/pdf-file/${f.id}`;
-                state.organizePdfDoc = await pdfjsLib.getDocument(pdfUrl).promise;
-                hideLoading();
+                    showLoading('Memuat halaman...');
+                    const pdfUrl = `/api/pdf-file/${f.id}`;
+                    state.organizePdfDoc = await pdfjsLib.getDocument(pdfUrl).promise;
+                    hideLoading();
 
-                await renderPageGrid();
-                startExpiryTimer(f.id, f.expiry);
+                    await renderPageGrid();
+                    startExpiryTimer(f.id, f.expiry);
+                    restoredCount++;
+                }
                 break;
+        }
+
+        // --- Rehydrate OUTPUT files (results) ---
+        if (outputs.length > 0) {
+            switch (panel) {
+                case 'merge':
+                    showResult('merge', outputs.map(f => ({
+                        id: f.id,
+                        name: f.originalName,
+                        size: f.size,
+                        expiry: f.expiry
+                    })));
+                    break;
+
+                case 'split':
+                    showResult('split', outputs.map(f => ({
+                        id: f.id,
+                        name: f.originalName,
+                        size: f.size,
+                        expiry: f.expiry
+                    })));
+                    break;
+
+                case 'compress': {
+                    // For compress, we need originalSize and reduction from the server
+                    const f = outputs[0];
+                    const originalSize = typeof f.originalSize === 'number' ? f.originalSize : null;
+                    const reduction = typeof f.reduction === 'number' ? f.reduction : 0;
+                    // If originalSize missing, fall back to the upload file's size (before compression)
+                    const effectiveOriginalSize = originalSize ?? (uploads.length > 0 ? uploads[0].size : f.size);
+                    showCompressResult({
+                        fileId: f.id,
+                        filename: f.originalName,
+                        originalSize: effectiveOriginalSize,
+                        compressedSize: f.size,
+                        reduction,
+                        expiry: f.expiry
+                    });
+                    break;
+                }
+
+                case 'jpg-to-pdf':
+                    showResult('jpg-to-pdf', outputs.map(f => ({
+                        id: f.id,
+                        name: f.originalName,
+                        size: f.size,
+                        expiry: f.expiry
+                    })));
+                    break;
+
+                case 'organize':
+                    showResult('organize', outputs.map(f => ({
+                        id: f.id,
+                        name: f.originalName,
+                        size: f.size,
+                        expiry: f.expiry
+                    })));
+                    break;
             }
+        }
+
+        if (restoredCount > 0 || outputs.length > 0) {
+            showToast(`Sesi Anda dipulihkan (${restoredCount} berkas input, ${outputs.length} berkas hasil)`);
         }
     } catch (error) {
         console.error('Session restore failed:', error);
@@ -400,6 +481,12 @@ function routeFromHash() {
 
 // Panel management
 function openPanel(feature) {
+    // Switching tools directly (without going home) must clear the previous
+    // panel's files, previews and timers, or they bleed into the new panel.
+    if (state.currentPanel && state.currentPanel !== feature) {
+        resetPanelState();
+    }
+
     // Hide all panels first
     document.querySelectorAll('.tool-panel').forEach(p => p.style.display = 'none');
 
@@ -558,6 +645,9 @@ function resetPanelState() {
     // Stop lingering expiry timers.
     for (const timer of state.expiryTimers.values()) clearInterval(timer);
     state.expiryTimers.clear();
+
+    // Allow re-restoration when the panel is entered again after a reset.
+    if (state.restoredPanels) state.restoredPanels.clear();
 
     state.mergeFiles = [];
     state.mergePages = [];
@@ -1664,7 +1754,7 @@ function showCompressResult(data) {
         </div>
         
         <div class="result-files">
-            <div class="result-file">
+            <div class="result-file" id="result-file-${escapeAttr(data.fileId)}">
                 <div class="result-file-info">
                     <div class="file-icon">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -2588,6 +2678,16 @@ async function deleteFile(fileId, type) {
             if (state.expiryTimers.has(fileId)) {
                 clearInterval(state.expiryTimers.get(fileId));
                 state.expiryTimers.delete(fileId);
+            }
+
+            // If no more result files in this section, hide the section
+            const resultSection = document.getElementById(`${type}-result`);
+            if (resultSection) {
+                const remainingFiles = resultSection.querySelectorAll('.result-file');
+                if (remainingFiles.length === 0) {
+                    resultSection.style.display = 'none';
+                    resultSection.innerHTML = '';
+                }
             }
 
             showToast('File berhasil dihapus');

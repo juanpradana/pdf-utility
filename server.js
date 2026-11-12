@@ -306,6 +306,9 @@ function trackFile(filePath, sessionId, originalName = null, meta = {}) {
         role: isOutput ? 'output' : 'upload',
         size,
         mimetype: meta.mimetype || (path.extname(filePath) === '.pdf' ? 'application/pdf' : 'image/jpeg'),
+        // Compression stats, kept so the result card can be rebuilt after a refresh.
+        originalSize: typeof meta.originalSize === 'number' ? meta.originalSize : null,
+        reduction: typeof meta.reduction === 'number' ? meta.reduction : null,
         createdAt: Date.now(),
     });
     return expiry;
@@ -530,10 +533,12 @@ app.post('/api/merge', async (req, res) => {
         }
 
         const mergedBytes = await mergedPdf.save();
-        const output = writeOutput(mergedBytes, req.sessionId, { tool: 'merge' });
 
         const firstFileId = (pages && pages[0] && pages[0].fileId) || (order && order[0]) || fileIds[0];
         const baseName = derivedBaseName(path.join(UPLOAD_DIR, `${firstFileId}.pdf`));
+        const filename = `merged_${baseName}.pdf`;
+
+        const output = writeOutput(mergedBytes, req.sessionId, { tool: 'merge', originalName: filename });
 
         res.json({
             success: true,
@@ -710,12 +715,18 @@ app.post('/api/compress-save', async (req, res) => {
 
         const pdfBytes = await pdfDoc.save({ useObjectStreams: true });
         const filename = `compressed_${sanitizeDownloadName(baseName, 'document').replace(/\.pdf$/i, '')}.pdf`;
-        const output = writeOutput(pdfBytes, req.sessionId, { tool: 'compress', originalName: filename });
 
         const original = Number(originalSize);
         const reduction = Number.isFinite(original) && original > 0
-            ? Math.max(0, Math.round((1 - output.size / original) * 100))
+            ? Math.max(0, Math.round((1 - pdfBytes.length / original) * 100))
             : 0;
+
+        const output = writeOutput(pdfBytes, req.sessionId, {
+            tool: 'compress',
+            originalName: filename,
+            originalSize: Number.isFinite(original) ? original : null,
+            reduction,
+        });
 
         res.json({
             success: true,
@@ -1094,6 +1105,8 @@ app.get('/api/session-files', (req, res) => {
             ext,
             role: data.role || (filePath.startsWith(OUTPUT_DIR) ? 'output' : 'upload'),
             tool: data.tool || null,
+            originalSize: typeof data.originalSize === 'number' ? data.originalSize : null,
+            reduction: typeof data.reduction === 'number' ? data.reduction : null,
             expiry: data.expiry,
             remainingSeconds: Math.max(0, Math.floor((data.expiry - now) / 1000)),
         });
