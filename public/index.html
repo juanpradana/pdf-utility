@@ -177,7 +177,12 @@
                                     <path d="M12 8l4 4-4 4"></path>
                                 </svg>
                             </div>
-                            <span class="feature-arrow">&rarr;</span>
+                            <span class="feature-arrow" aria-hidden="true">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                    <polyline points="12 5 19 12 12 19"></polyline>
+                                </svg>
+                            </span>
                         </div>
                         <h3>Gabungkan PDF</h3>
                         <p>Satukan beberapa berkas PDF menjadi satu dokumen utuh dengan urutan kustom.</p>
@@ -195,7 +200,12 @@
                                     <path d="M18 12h-2"></path>
                                 </svg>
                             </div>
-                            <span class="feature-arrow">&rarr;</span>
+                            <span class="feature-arrow" aria-hidden="true">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                    <polyline points="12 5 19 12 12 19"></polyline>
+                                </svg>
+                            </span>
                         </div>
                         <h3>Pisahkan PDF</h3>
                         <p>Ekstrak semua halaman atau pisahkan dokumen berdasarkan rentang halaman pilihan.</p>
@@ -212,7 +222,12 @@
                                     <path d="M4 15h16"></path>
                                 </svg>
                             </div>
-                            <span class="feature-arrow">&rarr;</span>
+                            <span class="feature-arrow" aria-hidden="true">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                    <polyline points="12 5 19 12 12 19"></polyline>
+                                </svg>
+                            </span>
                         </div>
                         <h3>Kompres PDF</h3>
                         <p>Perkecil ukuran berkas PDF dengan mode level kompresi atau target ukuran spesifik.</p>
@@ -228,7 +243,12 @@
                                     <path d="M21 15l-5-5L5 21"></path>
                                 </svg>
                             </div>
-                            <span class="feature-arrow">&rarr;</span>
+                            <span class="feature-arrow" aria-hidden="true">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                    <polyline points="12 5 19 12 12 19"></polyline>
+                                </svg>
+                            </span>
                         </div>
                         <h3>PDF ke JPG</h3>
                         <p>Ubah setiap halaman dokumen PDF menjadi gambar JPG berkualitas tinggi.</p>
@@ -244,7 +264,12 @@
                                     <rect x="8" y="12" width="8" height="6" rx="1"></rect>
                                 </svg>
                             </div>
-                            <span class="feature-arrow">&rarr;</span>
+                            <span class="feature-arrow" aria-hidden="true">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                    <polyline points="12 5 19 12 12 19"></polyline>
+                                </svg>
+                            </span>
                         </div>
                         <h3>JPG ke PDF</h3>
                         <p>Gabungkan gambar format JPG atau PNG menjadi satu dokumen PDF siap cetak.</p>
@@ -261,7 +286,12 @@
                                     <rect x="3" y="16" width="7" height="5" rx="1"></rect>
                                 </svg>
                             </div>
-                            <span class="feature-arrow">&rarr;</span>
+                            <span class="feature-arrow" aria-hidden="true">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                    <polyline points="12 5 19 12 12 19"></polyline>
+                                </svg>
+                            </span>
                         </div>
                         <h3>Atur Halaman PDF</h3>
                         <p>Putar, hapus, tambahkan berkas lain, dan susun ulang posisi halaman PDF secara visual.</p>
@@ -379,9 +409,26 @@
                     <div class="split-options" id="split-options" style="display: none;">
                         <div class="pdf-info" id="split-pdf-info"></div>
 
-                        <div class="section-subheading">
-                            <h4>Pratinjau Halaman</h4>
-                            <span class="hint">Klik halaman untuk memilih atau batalkan pilihan</span>
+                        <div class="split-preview-header">
+                            <div class="section-subheading">
+                                <h4>Pratinjau Halaman</h4>
+                                <span class="hint">Klik halaman untuk memilih atau batalkan pilihan</span>
+                            </div>
+                            <div class="preview-select-actions">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="selectAllSplitPages()" aria-label="Pilih semua halaman">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="9 11 12 14 22 4"></polyline>
+                                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                                    </svg>
+                                    <span>Pilih Semua</span>
+                                </button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="deselectAllSplitPages()" aria-label="Batalkan pilihan semua halaman">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                                    </svg>
+                                    <span>Batal Pilih</span>
+                                </button>
+                            </div>
                         </div>
                         <div class="page-preview-grid" id="split-page-preview"></div>
 
@@ -512,7 +559,12 @@
                                 </div>
                                 <p class="target-size-hint" id="target-size-hint">Ukuran asli berkas: <span id="original-size-display">-</span></p>
                                 <p class="target-size-warning" id="target-size-warning" style="display: none;">
-                                    ⚠️ Target ukuran terlalu kecil dapat mengurangi keterbacaan teks halus pada gambar.
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="vertical-align: -2px; margin-right: 4px; display: inline-block;">
+                                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                    </svg>
+                                    <span>Target ukuran terlalu kecil dapat mengurangi keterbacaan teks halus pada gambar.</span>
                                 </p>
                             </div>
                         </div>

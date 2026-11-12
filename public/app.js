@@ -59,8 +59,265 @@ const state = {
     organizePages: [],
     organizePdfDoc: null,
     insertedPdfs: [],
-    expiryTimers: new Map()
+    expiryTimers: new Map(),
+    isProcessing: false,
+    sessionRestored: false
 };
+
+// ---------------------------------------------------------------------------
+// Session persistence
+//
+// Files live on disk for up to 30 minutes, backed by a stable session cookie.
+// The app keeps a small metadata cache in localStorage so a browser refresh
+// can recover the current tool's documents instead of showing an empty panel.
+// ---------------------------------------------------------------------------
+
+const SESSION_STORAGE_KEY = 'pdf-utility-session-cache';
+
+function readSessionCache() {
+    try {
+        const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : null;
+        return parsed && typeof parsed === 'object' && parsed.files ? parsed : { files: {} };
+    } catch {
+        return { files: {} };
+    }
+}
+
+function writeSessionCache(cache) {
+    try {
+        localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(cache));
+    } catch { /* storage unavailable — non-fatal */ }
+}
+
+function rememberSessionFile(file, tool) {
+    if (!file || !file.id) return;
+    const cache = readSessionCache();
+    cache.files[file.id] = {
+        id: file.id,
+        originalName: file.name || file.originalName || file.id,
+        size: file.size || 0,
+        tool: tool || cache.files[file.id]?.tool || null,
+        expiry: file.expiry || null,
+    };
+    writeSessionCache(cache);
+}
+
+function forgetSessionFile(fileId) {
+    if (!fileId) return;
+    const cache = readSessionCache();
+    if (cache.files[fileId]) {
+        delete cache.files[fileId];
+        writeSessionCache(cache);
+    }
+}
+
+/**
+ * Render an empty-state placeholder into a file list container.
+ * `container` may be the <ul>/<div> that normally holds file items.
+ */
+function renderEmptyState(container, title, hint) {
+    if (!container) return;
+    container.innerHTML = `
+        <div class="empty-state">
+            <div class="empty-state-icon">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="12" y1="18" x2="12" y2="12"></line>
+                    <line x1="9" y1="15" x2="15" y2="15"></line>
+                </svg>
+            </div>
+            <p class="empty-state-title">${escapeHtml(title)}</p>
+            <p class="empty-state-hint">${escapeHtml(hint)}</p>
+        </div>
+    `;
+}
+
+/** Close the mobile navigation drawer (used by the router). */
+function closeMobileMenu() {
+    const menu = document.getElementById('mobile-menu');
+    const btn = document.getElementById('mobile-menu-btn');
+    if (menu && menu.classList.contains('active')) {
+        menu.classList.remove('active');
+        if (btn) btn.setAttribute('aria-expanded', 'false');
+    }
+}
+
+/** Warn before leaving if a processing job is in progress. */
+function installRouteGuard() {
+    window.addEventListener('beforeunload', (e) => {
+        if (state.isProcessing) {
+            e.preventDefault();
+            e.returnValue = 'Proses PDF sedang berjalan. Yakin ingin meninggalkan halaman?';
+            return e.returnValue;
+        }
+    });
+}
+
+/**
+ * Restore active files from the session API and rehydrate the currently open panel.
+ * Called once on DOMContentLoaded and on every route change.
+ */
+async function restoreSessionFiles() {
+    if (state.sessionRestored) return;
+    state.sessionRestored = true;
+
+    try {
+        const response = await fetch('/api/session-files');
+        if (!response.ok) return;
+        const { success, files } = await response.json();
+        if (!success || !Array.isArray(files) || files.length === 0) return;
+
+        const panel = state.currentPanel;
+        if (!panel) return;
+
+        // Filter files belonging to the current panel's tool
+        const toolFiles = files.filter(f => f.tool === panel);
+        if (toolFiles.length === 0) return;
+
+        showToast(`Sesi Anda dipulihkan (${toolFiles.length} berkas aktif)`);
+
+        switch (panel) {
+            case 'merge':
+                for (const f of toolFiles) {
+                    state.mergeFiles.push({
+                        id: f.id,
+                        name: f.originalName,
+                        size: f.size,
+                        expiry: f.expiry
+                    });
+                    startExpiryTimer(f.id, f.expiry);
+                }
+                renderMergeFileList();
+                if (state.mergeFiles.length >= 2) {
+                    document.getElementById('merge-action-bar').style.display = 'flex';
+                }
+                break;
+
+            case 'split': {
+                const f = toolFiles[0];
+                state.splitFile = { id: f.id, originalName: f.originalName, size: f.size, expiry: f.expiry };
+                document.getElementById('split-upload-zone').style.display = 'none';
+                document.getElementById('split-options').style.display = 'block';
+                document.getElementById('split-action-bar').style.display = 'flex';
+
+                // Load PDF for preview
+                showLoading('Memuat preview halaman...');
+                const pdfUrl = `/api/pdf-file/${f.id}`;
+                state.splitPdfDoc = await pdfjsLib.getDocument(pdfUrl).promise;
+                hideLoading();
+
+                state.splitFile.pageCount = state.splitPdfDoc.numPages;
+                document.getElementById('split-pdf-info').innerHTML = `
+                    <div class="pdf-info-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                        </svg>
+                    </div>
+                    <div class="pdf-info-details">
+                        <h4>${escapeHtml(f.originalName)}</h4>
+                        <p>${state.splitFile.pageCount} halaman • ${formatFileSize(f.size)}</p>
+                    </div>
+                `;
+                await renderSplitPagePreviews();
+                startExpiryTimer(f.id, f.expiry);
+                break;
+            }
+
+            case 'compress': {
+                const f = toolFiles[0];
+                state.compressFile = { id: f.id, originalName: f.originalName, size: f.size, expiry: f.expiry };
+                document.getElementById('compress-upload-zone').style.display = 'none';
+                document.getElementById('compress-options').style.display = 'block';
+                document.getElementById('compress-action-bar').style.display = 'flex';
+
+                document.getElementById('compress-pdf-info').innerHTML = `
+                    <div class="pdf-info-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                        </svg>
+                    </div>
+                    <div class="pdf-info-details">
+                        <h4>${escapeHtml(f.originalName)}</h4>
+                        <p>Ukuran asli: ${formatFileSize(f.size)}</p>
+                    </div>
+                `;
+                document.getElementById('original-size-display').textContent = formatFileSize(f.size);
+                const defaultTargetMB = (f.size / (1024 * 1024) * 0.5).toFixed(1);
+                document.getElementById('target-size-value').value = defaultTargetMB;
+                startExpiryTimer(f.id, f.expiry);
+                break;
+            }
+
+            case 'pdf-to-jpg': {
+                const f = toolFiles[0];
+                state.pdfToJpgFile = { id: f.id, originalName: f.originalName, size: f.size, expiry: f.expiry };
+                document.getElementById('pdf-to-jpg-upload-zone').style.display = 'none';
+                document.getElementById('jpg-options').style.display = 'block';
+                document.getElementById('pdf-to-jpg-action-bar').style.display = 'flex';
+
+                document.getElementById('pdf-to-jpg-info').innerHTML = `
+                    <div class="pdf-info-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                        </svg>
+                    </div>
+                    <div class="pdf-info-details">
+                        <h4>${escapeHtml(f.originalName)}</h4>
+                        <p>${f.pageCount || '?'} halaman • ${formatFileSize(f.size)}</p>
+                    </div>
+                `;
+                // Need to fetch page count if missing
+                if (!f.pageCount) {
+                    const infoResponse = await fetch(`/api/pdf-info/${f.id}`);
+                    const infoData = await infoResponse.json();
+                    state.pdfToJpgFile.pageCount = infoData.pageCount;
+                    document.querySelector('#pdf-to-jpg-info .pdf-info-details p').textContent =
+                        `${infoData.pageCount} halaman • ${formatFileSize(f.size)}`;
+                }
+                startExpiryTimer(f.id, f.expiry);
+                break;
+            }
+
+            case 'jpg-to-pdf':
+                for (const f of toolFiles) {
+                    state.jpgToPdfFiles.push({
+                        id: f.id,
+                        name: f.originalName,
+                        size: f.size,
+                        expiry: f.expiry
+                    });
+                    startExpiryTimer(f.id, f.expiry);
+                }
+                renderJpgToPdfFileList();
+                document.getElementById('jpg-to-pdf-action-bar').style.display = 'flex';
+                document.getElementById('jpg-to-pdf-options').style.display = 'block';
+                break;
+
+            case 'organize': {
+                const f = toolFiles[0];
+                state.organizeFile = { id: f.id, originalName: f.originalName, size: f.size, expiry: f.expiry };
+                document.getElementById('organize-upload-zone').style.display = 'none';
+                document.getElementById('organize-workspace').style.display = 'block';
+
+                showLoading('Memuat halaman...');
+                const pdfUrl = `/api/pdf-file/${f.id}`;
+                state.organizePdfDoc = await pdfjsLib.getDocument(pdfUrl).promise;
+                hideLoading();
+
+                await renderPageGrid();
+                startExpiryTimer(f.id, f.expiry);
+                break;
+            }
+        }
+    } catch (error) {
+        console.error('Session restore failed:', error);
+    }
+}
 
 // Utility functions
 function formatFileSize(bytes) {
@@ -77,6 +334,7 @@ function showLoading(text = 'Memproses...') {
 }
 
 function hideLoading() {
+    state.isProcessing = false;
     document.getElementById('loading-overlay').classList.remove('active');
 }
 
@@ -106,6 +364,13 @@ function formatTime(seconds) {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+/** Seconds left before an expiry timestamp, clamped at zero. */
+function remainingSeconds(expiry) {
+    const until = Number(expiry);
+    if (!Number.isFinite(until)) return 0;
+    return Math.max(0, Math.floor((until - Date.now()) / 1000));
 }
 
 // ---------------------------------------------------------------------------
@@ -181,8 +446,14 @@ function showAbout() {
 /**
  * Move to a route. Setting the hash pushes a history entry, so Back walks the
  * user home / to the previous tool instead of leaving the app.
+ * Prevents navigation if a processing job is in progress.
  */
 function navigateTo(route) {
+    if (state.isProcessing) {
+        if (!confirm('Proses PDF sedang berjalan. Yakin ingin berpindah halaman?')) {
+            return;
+        }
+    }
     const target = route && ROUTES.has(route) ? `#/${route}` : '#/';
     if (window.location.hash === target) {
         handleRoute();
@@ -202,6 +473,9 @@ function handleCardKeydown(event, feature) {
 function handleRoute() {
     const route = routeFromHash();
 
+    // Close mobile menu on any route change
+    closeMobileMenu();
+
     // Mark the active nav link for assistive tech and visual orientation.
     document.querySelectorAll('.nav-link').forEach(link => {
         const isActive = link.getAttribute('href') === `#/${route}` ||
@@ -216,6 +490,7 @@ function handleRoute() {
 
     if (route) {
         openPanel(route);
+        restoreSessionFiles();
     } else {
         closePanel();
     }
@@ -266,9 +541,7 @@ document.addEventListener('click', (e) => {
 
 function resetPanelState() {
     // Detach any touch listeners registered for the outgoing panel.
-    while (touchDragCleanups.length > 0) {
-        try { touchDragCleanups.pop()(); } catch { /* ignore */ }
-    }
+    runTouchDragCleanups();
 
     // PDF.js documents hold canvas references and web workers; destroy them
     // explicitly so they don't leak memory across panel switches.
@@ -431,6 +704,9 @@ async function uploadFiles(files, type) {
     for (const file of files) {
         formData.append('files', file);
     }
+    if (type) {
+        formData.append('tool', type);
+    }
 
     try {
         showLoading('Mengunggah file...');
@@ -542,14 +818,16 @@ async function handleMergeUpload(files) {
                 size: file.size,
                 expiry: file.expiry
             });
+            rememberSessionFile({ id: file.id, name: file.originalName, size: file.size, expiry: file.expiry }, 'merge');
+            startExpiryTimer(file.id, file.expiry);
         });
-        
+
         renderMergeFileList();
-        
+
         if (state.mergeFiles.length >= 2) {
             document.getElementById('merge-action-bar').style.display = 'flex';
         }
-        
+
         showToast(`${pdfFiles.length} file berhasil diunggah`);
     } catch (error) {
         console.error('Upload error:', error);
@@ -559,7 +837,14 @@ async function handleMergeUpload(files) {
 function renderMergeFileList() {
     const list = document.getElementById('merge-file-list');
     list.innerHTML = '';
-    
+
+    if (state.mergeFiles.length === 0) {
+        renderEmptyState(list, 'Belum ada file digabung', 'Unggah atau tarik minimal 2 berkas PDF ke area di atas untuk mulai menyatukan dokumen.');
+        // Touch listeners are only meaningful for a non-empty list.
+        runTouchDragCleanups();
+        return;
+    }
+
     state.mergeFiles.forEach((file, index) => {
         const item = document.createElement('div');
         item.className = 'file-item';
@@ -643,21 +928,28 @@ function renderMergeFileList() {
     });
 }
 
-function removeMergeFile(index) {
+async function removeMergeFile(index) {
     const file = state.mergeFiles[index];
-    
-    // Delete from server
-    fetch(`/api/delete/${file.id}`, { method: 'DELETE' });
-    
-    // Remove from mergePdfDocs
+    if (!file) return;
+
+    try {
+        const response = await fetch(`/api/delete/${file.id}`, { method: 'DELETE' });
+        if (!response.ok) {
+            console.warn('Failed to delete file on server:', file.id);
+        }
+    } catch (err) {
+        console.error('Delete request error:', err);
+    }
+
+    forgetSessionFile(file.id);
     state.mergePdfDocs.delete(file.id);
-    
+
     state.mergeFiles.splice(index, 1);
     renderMergeFileList();
-    
+
     // Rebuild merge pages
     rebuildMergePages();
-    
+
     if (state.mergeFiles.length < 2) {
         document.getElementById('merge-action-bar').style.display = 'none';
         document.getElementById('merge-preview-section').style.display = 'none';
@@ -803,7 +1095,8 @@ async function processMerge() {
         showToast('Minimal 2 file diperlukan untuk merge', 'error');
         return;
     }
-    
+
+    state.isProcessing = true;
     try {
         showLoading('Menggabungkan PDF...');
         
@@ -864,6 +1157,8 @@ async function handleSplitUpload(files) {
     try {
         const data = await uploadFiles([pdfFile], 'split');
         state.splitFile = data.files[0];
+        state.splitFile.name = data.files[0].originalName;
+        rememberSessionFile(state.splitFile, 'split');
         
         // Get PDF info
         const infoResponse = await fetch(`/api/pdf-info/${state.splitFile.id}`);
@@ -954,13 +1249,31 @@ function updateSelectedPagesInfo() {
     const count = state.splitSelectedPages.size;
     const infoEl = document.getElementById('selected-pages-info');
     const countEl = document.getElementById('selected-count');
-    
+
     if (count > 0) {
         infoEl.style.display = 'block';
         countEl.textContent = count;
     } else {
         infoEl.style.display = 'none';
     }
+}
+
+/** Select every page in the current split preview. */
+function selectAllSplitPages() {
+    if (!state.splitPdfDoc) return;
+    const pageCount = state.splitPdfDoc.numPages;
+    for (let i = 1; i <= pageCount; i++) {
+        state.splitSelectedPages.add(i);
+    }
+    document.querySelectorAll('#split-page-preview .page-preview-item').forEach(el => el.classList.add('selected'));
+    updateSelectedPagesInfo();
+}
+
+/** Clear the page selection in the split preview. */
+function deselectAllSplitPages() {
+    state.splitSelectedPages.clear();
+    document.querySelectorAll('#split-page-preview .page-preview-item').forEach(el => el.classList.remove('selected'));
+    updateSelectedPagesInfo();
 }
 
 // Split mode toggle
@@ -984,9 +1297,9 @@ async function processSplit() {
         showToast('Upload file PDF terlebih dahulu', 'error');
         return;
     }
-    
+
     const mode = document.querySelector('input[name="split-mode"]:checked').value;
-    
+
     // Handle selected pages mode
     if (mode === 'selected') {
         if (state.splitSelectedPages.size === 0) {
@@ -994,7 +1307,8 @@ async function processSplit() {
             return;
         }
     }
-    
+
+    state.isProcessing = true;
     try {
         showLoading('Memisahkan PDF...');
         
@@ -1072,6 +1386,8 @@ async function handleCompressUpload(files) {
     try {
         const data = await uploadFiles([pdfFile], 'compress');
         state.compressFile = data.files[0];
+        state.compressFile.name = data.files[0].originalName;
+        rememberSessionFile(state.compressFile, 'compress');
         
         document.getElementById('compress-upload-zone').style.display = 'none';
         document.getElementById('compress-options').style.display = 'block';
@@ -1117,6 +1433,33 @@ function toggleCompressMode() {
     document.getElementById('compress-level-section').style.display = mode === 'level' ? 'block' : 'none';
     document.getElementById('compress-target-section').style.display = mode === 'target' ? 'block' : 'none';
 }
+
+/**
+ * Show or hide the target-size warning depending on how aggressive the request
+ * is. Runs on every input so the message never lags behind the field.
+ */
+function updateTargetSizeWarning() {
+    if (!state.compressFile) return;
+    const targetBytes = getTargetSizeBytes();
+    const warning = document.getElementById('target-size-warning');
+    if (!warning) return;
+
+    // Warn when the target is 25% or less of the original: below that point,
+    // fine text in scanned images starts to lose legibility.
+    if (targetBytes !== null && targetBytes <= state.compressFile.size * 0.25) {
+        warning.style.display = 'block';
+    } else {
+        warning.style.display = 'none';
+    }
+}
+
+// Live validation on the target size fields.
+['target-size-value', 'target-size-unit'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', updateTargetSizeWarning);
+    el.addEventListener('change', updateTargetSizeWarning);
+});
 
 // Calculate target size in bytes
 function getTargetSizeBytes() {
@@ -1187,7 +1530,8 @@ async function processCompress() {
     } else {
         level = document.querySelector('input[name="compress-level"]:checked').value;
     }
-    
+
+    state.isProcessing = true;
     try {
         showLoading('Menganalisis PDF...');
         
@@ -1358,7 +1702,7 @@ function showCompressResult(data) {
                 <circle cx="12" cy="12" r="10"></circle>
                 <polyline points="12 6 12 12 16 14"></polyline>
             </svg>
-            <span>File akan dihapus permanen dalam <strong id="countdown-${data.fileId}">30:00</strong> menit</span>
+            <span>File akan dihapus permanen dalam <strong id="countdown-${data.fileId}">${formatTime(remainingSeconds(data.expiry))}</strong> menit</span>
         </div>
     `;
     
@@ -1378,6 +1722,8 @@ async function handlePdfToJpgUpload(files) {
     try {
         const data = await uploadFiles([pdfFile], 'pdf-to-jpg');
         state.pdfToJpgFile = data.files[0];
+        state.pdfToJpgFile.name = data.files[0].originalName;
+        rememberSessionFile(state.pdfToJpgFile, 'pdf-to-jpg');
         
         // Get PDF info
         const infoResponse = await fetch(`/api/pdf-info/${state.pdfToJpgFile.id}`);
@@ -1413,10 +1759,11 @@ async function processPdfToJpg() {
         showToast('Upload file PDF terlebih dahulu', 'error');
         return;
     }
-    
+
     const quality = document.querySelector('input[name="jpg-quality"]:checked').value;
     const jpgQuality = quality === 'high' ? 0.95 : quality === 'medium' ? 0.80 : 0.60;
-    
+
+    state.isProcessing = true;
     try {
         showLoading('Mengkonversi ke JPG...');
         
@@ -1522,22 +1869,45 @@ async function processPdfToJpg() {
     }
 }
 
-function downloadAllJpg() {
+async function downloadAllJpg() {
     if (!state.pdfToJpgImages || state.pdfToJpgImages.length === 0) {
         showToast('Tidak ada gambar untuk didownload', 'error');
         return;
     }
-    
-    state.pdfToJpgImages.forEach((img, index) => {
-        setTimeout(() => {
+
+    showToast('Mengunduh semua gambar...');
+
+    for (const img of state.pdfToJpgImages) {
+        let objectUrl = null;
+        try {
+            // Fetching the data URL gives us a Blob we can revoke, which keeps
+            // large multi-page exports from ballooning memory in one go.
+            const response = await fetch(img.dataUrl);
+            const blob = await response.blob();
+            objectUrl = URL.createObjectURL(blob);
+
+            const link = document.createElement('a');
+            link.href = objectUrl;
+            link.download = `page_${img.page}.jpg`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        } catch {
+            // Fall back to the raw data URL if the blob conversion fails.
             const link = document.createElement('a');
             link.href = img.dataUrl;
             link.download = `page_${img.page}.jpg`;
             link.click();
-        }, index * 300); // Delay to prevent browser blocking
-    });
-    
-    showToast('Mengunduh semua gambar...');
+        } finally {
+            if (objectUrl) {
+                setTimeout(() => URL.revokeObjectURL(objectUrl), 2000);
+            }
+        }
+
+        // Keep a small gap between saves so browsers do not treat the burst as
+        // a blocked multi-download.
+        await new Promise(resolve => setTimeout(resolve, 250));
+    }
 }
 
 // JPG to PDF handlers
@@ -1560,12 +1930,14 @@ async function handleJpgToPdfUpload(files) {
                 size: file.size,
                 expiry: file.expiry
             });
+            rememberSessionFile({ id: file.id, name: file.originalName, size: file.size, expiry: file.expiry }, 'jpg-to-pdf');
+            startExpiryTimer(file.id, file.expiry);
         });
-        
+
         renderJpgToPdfFileList();
         document.getElementById('jpg-to-pdf-action-bar').style.display = 'flex';
         document.getElementById('jpg-to-pdf-options').style.display = 'block';
-        
+
         showToast(`${imageFiles.length} gambar berhasil diunggah`);
     } catch (error) {
         console.error('Upload error:', error);
@@ -1575,7 +1947,13 @@ async function handleJpgToPdfUpload(files) {
 function renderJpgToPdfFileList() {
     const list = document.getElementById('jpg-to-pdf-file-list');
     list.innerHTML = '';
-    
+
+    if (state.jpgToPdfFiles.length === 0) {
+        renderEmptyState(list, 'Belum ada gambar', 'Unggah atau tarik beberapa berkas JPG/PNG untuk disatukan menjadi satu PDF.');
+        runTouchDragCleanups();
+        return;
+    }
+
     state.jpgToPdfFiles.forEach((file, index) => {
         const item = document.createElement('div');
         item.className = 'file-item';
@@ -1659,15 +2037,26 @@ function renderJpgToPdfFileList() {
     });
 }
 
-function removeJpgToPdfFile(index) {
+async function removeJpgToPdfFile(index) {
     const file = state.jpgToPdfFiles[index];
-    fetch(`/api/delete/${file.id}`, { method: 'DELETE' });
-    
+    if (!file) return;
+
+    try {
+        const response = await fetch(`/api/delete/${file.id}`, { method: 'DELETE' });
+        if (!response.ok) {
+            console.warn('Failed to delete image on server:', file.id);
+        }
+    } catch (err) {
+        console.error('Delete request error:', err);
+    }
+
+    forgetSessionFile(file.id);
     state.jpgToPdfFiles.splice(index, 1);
     renderJpgToPdfFileList();
-    
+
     if (state.jpgToPdfFiles.length === 0) {
         document.getElementById('jpg-to-pdf-action-bar').style.display = 'none';
+        document.getElementById('jpg-to-pdf-options').style.display = 'none';
     }
 }
 
@@ -1676,7 +2065,8 @@ async function processJpgToPdf() {
         showToast('Upload gambar terlebih dahulu', 'error');
         return;
     }
-    
+
+    state.isProcessing = true;
     try {
         showLoading('Mengkonversi ke PDF...');
         
@@ -1876,6 +2266,8 @@ async function handleOrganizeUpload(files) {
     try {
         const data = await uploadFiles([pdfFile], 'organize');
         state.organizeFile = data.files[0];
+        state.organizeFile.name = data.files[0].originalName;
+        rememberSessionFile(state.organizeFile, 'organize');
         
         // Get PDF info
         const infoResponse = await fetch(`/api/pdf-info/${state.organizeFile.id}`);
@@ -2031,7 +2423,8 @@ async function processOrganize() {
         showToast('Tidak ada halaman yang tersisa', 'error');
         return;
     }
-    
+
+    state.isProcessing = true;
     try {
         showLoading('Menyimpan perubahan...');
         
@@ -2129,7 +2522,7 @@ function showResult(type, files) {
                     <circle cx="12" cy="12" r="10"></circle>
                     <polyline points="12 6 12 12 16 14"></polyline>
                 </svg>
-                <span>File akan dihapus permanen dalam <strong id="countdown-${files[0].id}">30:00</strong> menit</span>
+                <span>File akan dihapus permanen dalam <strong id="countdown-${files[0].id}">${formatTime(remainingSeconds(files[0].expiry))}</strong> menit</span>
             </div>
         ` : ''}
     `;
@@ -2178,23 +2571,25 @@ async function deleteFile(fileId, type) {
     try {
         const response = await fetch(`/api/delete/${fileId}`, { method: 'DELETE' });
         const data = await response.json();
-        
+
         if (response.ok) {
+            forgetSessionFile(fileId);
+
             const fileEl = document.getElementById(`result-file-${fileId}`);
             if (fileEl) {
                 fileEl.remove();
             }
-            
+
             const timerEl = document.getElementById(`timer-${fileId}`);
             if (timerEl) {
                 timerEl.remove();
             }
-            
+
             if (state.expiryTimers.has(fileId)) {
                 clearInterval(state.expiryTimers.get(fileId));
                 state.expiryTimers.delete(fileId);
             }
-            
+
             showToast('File berhasil dihapus');
         } else {
             throw new Error(data.error);
@@ -2209,26 +2604,44 @@ async function deleteFile(fileId, type) {
 // the panel is reset, otherwise listeners pile up on every re-init.
 const touchDragCleanups = [];
 
+/** Detach every registered touch-drag listener (panel switch / rebuild). */
+function runTouchDragCleanups() {
+    while (touchDragCleanups.length > 0) {
+        try { touchDragCleanups.pop()(); } catch { /* ignore */ }
+    }
+}
+
 function initTouchDrag(element, list, onReorder) {
+    if (!element) return;
+
+    // A single list may be re-rendered repeatedly; drop any listeners a
+    // previous render bound to this same element before adding new ones.
+    if (typeof element._touchDragCleanup === 'function') {
+        element._touchDragCleanup();
+    }
+
     element.addEventListener('touchstart', handleTouchStart, { passive: false });
     element.addEventListener('touchmove', handleTouchMove, { passive: false });
     element.addEventListener('touchend', handleTouchEnd);
+    element.addEventListener('touchcancel', handleTouchEnd);
 
     const cleanup = () => {
         element.removeEventListener('touchstart', handleTouchStart, { passive: false });
         element.removeEventListener('touchmove', handleTouchMove, { passive: false });
         element.removeEventListener('touchend', handleTouchEnd);
+        element.removeEventListener('touchcancel', handleTouchEnd);
+        if (element._touchDragCleanup === cleanup) element._touchDragCleanup = undefined;
     };
+    element._touchDragCleanup = cleanup;
     touchDragCleanups.push(cleanup);
-    return cleanup;
 
     function handleTouchStart(e) {
         if (e.touches.length !== 1) return;
-        
+
         const touch = e.touches[0];
         const item = e.target.closest('[draggable="true"]');
         if (!item) return;
-        
+
         touchDragState.dragging = true;
         touchDragState.element = item;
         touchDragState.list = list;
@@ -2237,26 +2650,26 @@ function initTouchDrag(element, list, onReorder) {
         touchDragState.items = Array.from(list.querySelectorAll('[draggable="true"]'));
         touchDragState.fromIndex = touchDragState.items.indexOf(item);
         touchDragState.onReorder = onReorder;
-        
+
         item.classList.add('dragging');
         item.style.zIndex = '1000';
     }
-    
+
     function handleTouchMove(e) {
         if (!touchDragState.dragging || !touchDragState.element) return;
         e.preventDefault();
-        
+
         const touch = e.touches[0];
         const deltaY = touch.clientY - touchDragState.startY;
         const deltaX = touch.clientX - touchDragState.startX;
-        
+
         touchDragState.element.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
-        
+
         // Find element under touch point
         touchDragState.element.style.pointerEvents = 'none';
         const elementBelow = document.elementFromPoint(touch.clientX, touch.clientY);
         touchDragState.element.style.pointerEvents = '';
-        
+
         if (elementBelow) {
             const targetItem = elementBelow.closest('[draggable="true"]');
             touchDragState.items.forEach(item => item.classList.remove('drag-over'));
@@ -2265,17 +2678,20 @@ function initTouchDrag(element, list, onReorder) {
             }
         }
     }
-    
-    function handleTouchEnd(e) {
-        if (!touchDragState.dragging || !touchDragState.element) return;
-        
+
+    function handleTouchEnd() {
+        if (!touchDragState.dragging || !touchDragState.element) {
+            resetTouchDragState();
+            return;
+        }
+
         const item = touchDragState.element;
         item.classList.remove('dragging');
         item.style.transform = '';
         item.style.zIndex = '';
-        
+
         // Find target
-        const dragOverItem = touchDragState.list.querySelector('.drag-over');
+        const dragOverItem = touchDragState.list ? touchDragState.list.querySelector('.drag-over') : null;
         if (dragOverItem) {
             const toIndex = touchDragState.items.indexOf(dragOverItem);
             if (toIndex !== -1 && toIndex !== touchDragState.fromIndex) {
@@ -2283,12 +2699,23 @@ function initTouchDrag(element, list, onReorder) {
             }
             dragOverItem.classList.remove('drag-over');
         }
-        
-        // Reset state
-        touchDragState.dragging = false;
-        touchDragState.element = null;
-        touchDragState.fromIndex = -1;
+
+        // Reset state fully so a later drag starts clean.
+        resetTouchDragState();
     }
+}
+
+function resetTouchDragState() {
+    touchDragState.dragging = false;
+    touchDragState.element = null;
+    touchDragState.list = null;
+    touchDragState.items = [];
+    touchDragState.fromIndex = -1;
+    touchDragState.onReorder = null;
+    touchDragState.startY = 0;
+    touchDragState.startX = 0;
+    touchDragState.currentY = 0;
+    touchDragState.currentX = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -2493,6 +2920,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initTheme();
     setupHeroFileInput();
     setupGlobalDragAndDrop();
+    installRouteGuard();
 
     // Esc closes the mobile menu, the way people expect on a phone.
     document.addEventListener('keydown', (e) => {

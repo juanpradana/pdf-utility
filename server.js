@@ -177,6 +177,33 @@ if (FRONTEND_ORIGIN) {
 }
 
 app.use(cookieParser());
+
+// ---------------------------------------------------------------------------
+// Session cookie middleware
+//
+// Gives each browser visitor a stable, anonymous session ID stored in an HTTP-only
+// cookie. This allows uploaded and generated files to survive browser refreshes
+// throughout their 30-minute validity window.
+// ---------------------------------------------------------------------------
+
+const SESSION_COOKIE_NAME = 'pdf_session';
+const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+app.use((req, res, next) => {
+    let sessionId = req.cookies && req.cookies[SESSION_COOKIE_NAME];
+    if (!sessionId || !UUID_V4_RE.test(sessionId)) {
+        sessionId = uuidv4();
+        res.cookie(SESSION_COOKIE_NAME, sessionId, {
+            httpOnly: true,
+            sameSite: 'lax',
+            secure: process.env.NODE_ENV === 'production',
+            maxAge: 24 * 60 * 60 * 1000,
+        });
+    }
+    req.sessionId = sessionId;
+    next();
+});
+
 app.use(express.json({ limit: process.env.JSON_LIMIT || '25mb' }));
 
 // ---------------------------------------------------------------------------
@@ -240,10 +267,10 @@ const upload = multer({
 // File tracking & expiry
 // ---------------------------------------------------------------------------
 
-/** filePath -> { expiry, sessionId, originalName } */
+/** filePath -> { expiry, sessionId, originalName, fileId, tool, role, size, mimetype, createdAt } */
 const fileTracker = new Map();
 
-function trackFile(filePath, sessionId, originalName = null) {
+function trackFile(filePath, sessionId, originalName = null, meta = {}) {
     const expiry = Date.now() + FILE_EXPIRY_MS;
 
     // Bound the map so a long-running process cannot grow without limit.
@@ -259,7 +286,28 @@ function trackFile(filePath, sessionId, originalName = null) {
         if (oldestKey !== null) fileTracker.delete(oldestKey);
     }
 
-    fileTracker.set(filePath, { expiry, sessionId, originalName });
+    const fileId = path.basename(filePath, path.extname(filePath));
+    const isOutput = filePath.startsWith(OUTPUT_DIR);
+    let size = meta.size;
+    if (typeof size !== 'number') {
+        try {
+            size = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0;
+        } catch {
+            size = 0;
+        }
+    }
+
+    fileTracker.set(filePath, {
+        expiry,
+        sessionId,
+        originalName: originalName || path.basename(filePath),
+        fileId,
+        tool: meta.tool || (isOutput ? 'output' : null),
+        role: isOutput ? 'output' : 'upload',
+        size,
+        mimetype: meta.mimetype || (path.extname(filePath) === '.pdf' ? 'application/pdf' : 'image/jpeg'),
+        createdAt: Date.now(),
+    });
     return expiry;
 }
 
@@ -330,12 +378,16 @@ function derivedBaseName(filePath, fallback = 'document') {
     return path.basename(original).replace(/\.[^/.]+$/, '') || fallback;
 }
 
-/** Write bytes to a fresh output file and start tracking it. */
-function writeOutput(bytes) {
+/** Write bytes to a fresh output file and start tracking it with user session. */
+function writeOutput(bytes, sessionId = null, meta = {}) {
     const outputId = uuidv4();
     const outputPath = path.join(OUTPUT_DIR, `${outputId}.pdf`);
     fs.writeFileSync(outputPath, bytes);
-    const expiry = trackFile(outputPath, 'output');
+    const expiry = trackFile(outputPath, sessionId || 'output', meta.originalName || null, {
+        tool: meta.tool || 'output',
+        size: bytes.length,
+        ...meta,
+    });
     return { outputId, outputPath, size: bytes.length, expiry };
 }
 
@@ -371,7 +423,8 @@ app.post('/api/upload', upload.array('files', MAX_FILES), async (req, res) => {
             return badRequest(res, 'No files were uploaded.');
         }
 
-        const sessionId = uuidv4();
+        const sessionId = req.sessionId || uuidv4();
+        const tool = String(req.body.tool || req.query.tool || '').trim();
         const files = [];
         const rejected = [];
 
@@ -390,7 +443,11 @@ app.post('/api/upload', upload.array('files', MAX_FILES), async (req, res) => {
                 continue;
             }
 
-            const expiry = trackFile(filePath, sessionId, file.originalname);
+            const expiry = trackFile(filePath, sessionId, file.originalname, {
+                tool: tool || null,
+                size: file.size,
+                mimetype: file.mimetype,
+            });
 
             files.push({
                 id: path.basename(file.filename, path.extname(file.filename)),
@@ -473,7 +530,7 @@ app.post('/api/merge', async (req, res) => {
         }
 
         const mergedBytes = await mergedPdf.save();
-        const output = writeOutput(mergedBytes);
+        const output = writeOutput(mergedBytes, req.sessionId, { tool: 'merge' });
 
         const firstFileId = (pages && pages[0] && pages[0].fileId) || (order && order[0]) || fileIds[0];
         const baseName = derivedBaseName(path.join(UPLOAD_DIR, `${firstFileId}.pdf`));
@@ -511,10 +568,11 @@ app.post('/api/split', async (req, res) => {
                 const newPdf = await PDFDocument.create();
                 const [page] = await newPdf.copyPages(pdf, [i]);
                 newPdf.addPage(page);
-                const output = writeOutput(await newPdf.save());
+                const filename = `split_${baseName}_page${i + 1}.pdf`;
+                const output = writeOutput(await newPdf.save(), req.sessionId, { tool: 'split', originalName: filename });
                 results.push({
                     fileId: output.outputId,
-                    filename: `split_${baseName}_page${i + 1}.pdf`,
+                    filename,
                     size: output.size,
                     expiry: output.expiry,
                 });
@@ -555,10 +613,11 @@ app.post('/api/split', async (req, res) => {
                 const pages = await newPdf.copyPages(pdf, pageIndices);
                 pages.forEach(page => newPdf.addPage(page));
 
-                const output = writeOutput(await newPdf.save());
+                const filename = `split_${baseName}_pages${start}-${end}.pdf`;
+                const output = writeOutput(await newPdf.save(), req.sessionId, { tool: 'split', originalName: filename });
                 results.push({
                     fileId: output.outputId,
-                    filename: `split_${baseName}_pages${start}-${end}.pdf`,
+                    filename,
                     size: output.size,
                     expiry: output.expiry,
                 });
@@ -579,6 +638,7 @@ const COMPRESS_LEVELS = {
     low: { quality: 85, dpi: 150 },
     recommended: { quality: 70, dpi: 120 },
     extreme: { quality: 50, dpi: 96 },
+    custom: { quality: 70, dpi: 120 },
 };
 
 app.post('/api/compress', async (req, res) => {
@@ -589,10 +649,8 @@ app.post('/api/compress', async (req, res) => {
         if (!loaded) return notFound(res);
 
         const { path: filePath, doc: pdf } = loaded;
-        const settings = COMPRESS_LEVELS[level];
-        if (!settings) {
-            return badRequest(res, 'Compression level must be one of: low, recommended, extreme.');
-        }
+        const effectiveLevel = COMPRESS_LEVELS[level] ? level : 'recommended';
+        const settings = COMPRESS_LEVELS[effectiveLevel];
 
         const pages = [];
         for (let i = 0; i < pdf.getPageCount(); i++) {
@@ -651,7 +709,8 @@ app.post('/api/compress-save', async (req, res) => {
         }
 
         const pdfBytes = await pdfDoc.save({ useObjectStreams: true });
-        const output = writeOutput(pdfBytes);
+        const filename = `compressed_${sanitizeDownloadName(baseName, 'document').replace(/\.pdf$/i, '')}.pdf`;
+        const output = writeOutput(pdfBytes, req.sessionId, { tool: 'compress', originalName: filename });
 
         const original = Number(originalSize);
         const reduction = Number.isFinite(original) && original > 0
@@ -661,7 +720,7 @@ app.post('/api/compress-save', async (req, res) => {
         res.json({
             success: true,
             fileId: output.outputId,
-            filename: `compressed_${sanitizeDownloadName(baseName, 'document').replace(/\.pdf$/i, '')}.pdf`,
+            filename,
             originalSize: Number.isFinite(original) ? original : null,
             compressedSize: output.size,
             reduction,
@@ -832,12 +891,13 @@ app.post('/api/jpg-to-pdf', async (req, res) => {
             page.drawImage(image, { x: imgX, y: imgY, width: imgWidth, height: imgHeight });
         }
 
-        const output = writeOutput(await pdfDoc.save());
+        const filename = `images_${firstFileName}.pdf`;
+        const output = writeOutput(await pdfDoc.save(), req.sessionId, { tool: 'jpg-to-pdf', originalName: filename });
 
         res.json({
             success: true,
             fileId: output.outputId,
-            filename: `images_${firstFileName}.pdf`,
+            filename,
             size: output.size,
             pageCount: pdfDoc.getPageCount(),
             expiry: output.expiry,
@@ -928,12 +988,13 @@ app.post('/api/organize', async (req, res) => {
             return fail(res, 422, 'The result would contain no pages.', 'UNPROCESSABLE');
         }
 
-        const output = writeOutput(await newPdf.save());
+        const filename = `organized_${derivedBaseName(mainFilePath)}.pdf`;
+        const output = writeOutput(await newPdf.save(), req.sessionId, { tool: 'organize', originalName: filename });
 
         res.json({
             success: true,
             fileId: output.outputId,
-            filename: `organized_${derivedBaseName(mainFilePath)}.pdf`,
+            filename,
             size: output.size,
             pageCount: newPdf.getPageCount(),
             expiry: output.expiry,
@@ -993,6 +1054,56 @@ app.get('/api/expiry/:fileId', (req, res) => {
     }
 
     notFound(res);
+});
+
+// ---------------------------------------------------------------------------
+// API: active session files
+//
+// Returns all non-expired files belonging to the current user's session cookie.
+// Used to recover active documents upon browser refresh.
+// ---------------------------------------------------------------------------
+
+app.get('/api/session-files', (req, res) => {
+    const sessionId = req.sessionId;
+    if (!sessionId) {
+        return res.json({ success: true, files: [] });
+    }
+
+    const now = Date.now();
+    const files = [];
+
+    for (const [filePath, data] of fileTracker) {
+        if (data.sessionId !== sessionId) continue;
+        if (data.expiry <= now) continue;
+        if (!fs.existsSync(filePath)) continue;
+
+        const ext = path.extname(filePath).toLowerCase();
+        let size = data.size;
+        if (typeof size !== 'number') {
+            try {
+                size = fs.statSync(filePath).size;
+            } catch {
+                size = 0;
+            }
+        }
+
+        files.push({
+            id: data.fileId || path.basename(filePath, ext),
+            originalName: data.originalName || path.basename(filePath),
+            size,
+            ext,
+            role: data.role || (filePath.startsWith(OUTPUT_DIR) ? 'output' : 'upload'),
+            tool: data.tool || null,
+            expiry: data.expiry,
+            remainingSeconds: Math.max(0, Math.floor((data.expiry - now) / 1000)),
+        });
+    }
+
+    res.json({
+        success: true,
+        sessionId,
+        files: files.sort((a, b) => b.expiry - a.expiry),
+    });
 });
 
 // ---------------------------------------------------------------------------
