@@ -78,7 +78,7 @@ npm run dev
 | **PDF Rendering** | PDF.js (client-side) |
 | **Security** | helmet, express-rate-limit, cors |
 | **Frontend** | Vanilla JS, Obsidian Slate dark-first theme (+ light mode), hash routing |
-| **Reverse Proxy** | Nginx (bundled in Docker Compose) |
+| **Reverse Proxy** | Eksternal (host Nginx / Nginx Proxy Manager / Caddy / Traefik / Cloudflare Tunnel) — aplikasi berjalan pada port 3001 |
 
 > Tidak ada native dependency (`sharp`, `poppler`, dll) — semua operasi PDF
 > ditangani `pdf-lib` di server dan Canvas/PDF.js di browser, sehingga image
@@ -91,18 +91,13 @@ secure-pdf-utility-suite/
 ├── server.js              # Express server & API endpoints
 ├── package.json           # Dependencies & scripts
 ├── Dockerfile             # Production image (multi-stage, non-root)
-├── docker-compose.yml     # Deployment stack (app + nginx proxy)
+├── docker-compose.yml     # Deployment stack (app on port 3001)
 ├── .dockerignore          # Build context exclusions
 ├── .env.example           # Configuration template
 ├── README.md              # Documentation
 ├── nginx/
-│   ├── nginx.conf          # Reverse proxy + TLS config
-│   ├── generate-ssl.sh     # Self-signed certificate generator (fallback)
-│   ├── init-letsencrypt.sh # Let's Encrypt issuance + renewal
-│   ├── maintenance.html    # 503 page for the apex / non-app hosts
-│   ├── ssl/                # server.crt + server.key (generated, git-ignored)
-│   ├── letsencrypt/        # certbot state (generated, git-ignored)
-│   └── certbot-www/        # ACME HTTP-01 webroot (git-ignored)
+│   ├── nginx.conf          # Contoh reverse proxy untuk host/main proxy
+│   └── maintenance.html    # 503 page (opsional, untuk apex domain)
 ├── public/
 │   ├── index.html         # Frontend HTML
 │   ├── styles.css         # Design tokens & styles (dark-first + light theme)
@@ -113,45 +108,39 @@ secure-pdf-utility-suite/
 
 ## 🐳 Docker Deployment
 
-Docker Compose menjalankan **dua container** pada satu network internal:
+Docker Compose menjalankan **satu container** (`app`) pada **port 3001**
+(dapat diubah lewat `PORT` di `.env`), siap diletakkan di belakang reverse
+proxy utama di host (Nginx, Nginx Proxy Manager, Caddy, Traefik, atau
+Cloudflare Tunnel):
 
 | Service | Image | Peran |
 |---------|-------|-------|
-| `app` | build lokal (`pdf-utility:latest`) | Node/Express, tidak di-expose ke host |
-| `proxy` | `nginx:1.27-alpine` | Terminasi TLS, satu-satunya port publik (80, 443) |
+| `app` | build lokal (`pdf-utility:latest`) | Node/Express, di-expose pada port 3001 |
 
 ```bash
 # 1. Siapkan konfigurasi
 cp .env.example .env
-nano .env                 # sesuaikan bila perlu
+nano .env                 # sesuaikan bila perlu (PORT, dll)
 
-# 2. Buat sertifikat self-signed untuk origin (sekali saja)
-chmod +x nginx/generate-ssl.sh
-./nginx/generate-ssl.sh pdf.farzani.my.id farzani.my.id www.farzani.my.id
-
-# 3. Build dan jalankan
+# 2. Build dan jalankan
 docker compose up -d --build
 
-# 4. Cek status dan log
+# 3. Cek status dan log
 docker compose ps
 docker compose logs -f
 ```
 
-Aplikasi tersedia di **subdomain saja** (`https://pdf.farzani.my.id`); HTTP
-otomatis di-redirect (301) ke HTTPS. Nilai `server_name` subdomain dan host
-sertifikat diatur di `nginx/nginx.conf`.
+Aplikasi tersedia di **port 3001** di host. Reverse proxy utama — yang menerima
+trafik pada port 80 dan 443 serta melakukan terminasi TLS untuk
+`pdf.farzani.my.id` — meneruskan request ke `http://127.0.0.1:3001`.
+Redirect HTTP→HTTPS, terminasi TLS untuk `pdf.farzani.my.id`, dan routing
+host lain (termasuk apex) ditangani oleh **reverse proxy utama**, bukan oleh
+proyek ini. Contoh lengkap blok `server { ... }` untuk reverse proxy utama ada
+di `nginx/nginx.conf` — tinggal disesuaikan `server_name` dan path sertifikat.
 
-**Host lain — termasuk apex domain — mendapat halaman maintenance (503) dari
-`nginx/maintenance.html`, bukan aplikasi.** Jadi kalau DNS apex diarahkan ke
-server ini, pengunjung tetap melihat halaman "under maintenance", bukan
-aplikasi PDF. Tambahkan nama host lain ke `server_name` subdomain bila ingin
-melayaninya dari aplikasi.
-
-Proxy memakai `/api/health` untuk memastikan `app` sehat sebelum dianggap
-siap, dan `proxy_set_header X-Forwarded-*` diteruskan sehingga
-`TRUST_PROXY=true` membuat rate limit menghitung IP asli klien. Endpoint
-`/nginx-health` dijaga agar tetap `200` di **semua** host, karena healthcheck
-container memanggilnya sebagai `127.0.0.1` tanpa Host yang cocok.
+Aplikasi memakai `/api/health` untuk healthcheck container, dan
+`TRUST_PROXY=true` membuat rate limit mempercayai header `X-Forwarded-*` dari
+reverse proxy — jadi IP asli klien yang terhitung, bukan IP proxy.
 
 Perintah lain yang sering dipakai:
 
@@ -167,42 +156,15 @@ meskipun container di-rebuild.
 
 ### TLS
 
-Proxy membaca sertifikat dari `nginx/ssl/server.crt` dan `server.key` — nama
-file yang netral supaya sumber sertifikat bisa ditukar tanpa mengubah
-konfigurasi.
+Sertifikat dikelola oleh **reverse proxy utama**, bukan oleh proyek ini. Skrip
+`nginx/init-letsencrypt.sh` dan `nginx/generate-ssl.sh` masih tersedia sebagai
+referensi bila ingin menerbitkan sertifikat sendiri (mis. untuk Cloudflare
+proxy), namun untuk deployment multi-subdomain sebaiknya sertifikat dikelola
+pada lapisan proxy utama.
 
-**Pilihan 1 — Let's Encrypt (disarankan untuk domain publik).**
-Digunakan untuk deployment ini karena DNS `pdf.farzani.my.id` dan
-`farzani.my.id` mengarah langsung ke server dan port 80/443 terbuka:
-
-```bash
-./nginx/init-letsencrypt.sh pdf.farzani.my.id farzani.my.id
-```
-
-Skrip ini memverifikasi port 80 lebih dulu (supaya kegagalan DNS/firewall
-langsung terlihat, bukan sebagai galat ACME), memanggil certbot lewat Docker
-— jadi **tidak perlu `sudo` atau paket certbot di host** — lalu memasang
-kembali sertifikat dan memuat ulang Nginx. Sertifikat berlaku 90 hari;
-tambahkan cron bulanan untuk pembaruan:
-
-```bash
-0 3 1 * * cd /path/to/pdf-utility && ./nginx/init-letsencrypt.sh --renew >> nginx/letsencrypt/renew.log 2>&1
-```
-
-> Hanya sertifikakan domain yang benar-benar mengarah ke server ini. Saat ini
-> `www.farzani.my.id` menunjuk ke Cloudflare, bukan IP origin, sehingga
-> sertifikat hanya untuk `pdf.farzani.my.id` dan `farzani.my.id`.
-
-**Pilihan 2 — self-signed (fallback, cocok untuk Cloudflare proxy atau
-internal).** Jalankan sekali agar proxy tetap bisa start; browser akan
-memperingatkan sampai sertifikat tepercaya menggantikannya:
-
-```bash
-./nginx/generate-ssl.sh pdf.farzani.my.id farzani.my.id www.farzani.my.id
-```
-
-Argumen pertama menjadi CN, sisanya menjadi `subjectAltName`, sehingga satu
-sertifikat meliputi app subdomain **dan** host maintenance.
+Sertifikat Let's Encrypt yang sudah ada di host (`/home/ubuntu/pdf-utility/
+nginx/ssl/server.crt` dan `server.key`, kedaluwarsa Februari 2027) dapat
+langsung dijadikan referensi oleh reverse proxy utama.
 
 Jika domain berada di balik Cloudflare, set mode SSL/TLS ke **Full (strict)**
 agar sertifikat origin diverifikasi.
