@@ -36,3 +36,6 @@ nginx/ssl/*.pem
 nginx/letsencrypt/
 nginx/certbot-www/
 
+# Local agent tooling state
+.claude-flow/
+
